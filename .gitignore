@@ -1,0 +1,28 @@
+# Build outputs
+/target/
+*.class
+
+# IDE and OS files
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local state and private configuration
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+/data/
+/logs/
+*.log
+hs_err_pid*
