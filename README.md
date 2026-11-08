@@ -2,7 +2,7 @@
 
 2026 年《软件构造》分组实验项目：面向高校校园的闲置物品发布、检索、交换与售卖管理桌面应用。
 
-**当前状态：项目初始化。** 已提供 Maven 工程、Swing 启动窗口和协作文档；账号、物品、流转、评价、统计等业务功能待开发。
+**当前状态为第一周设计初版。** 已提供 Maven 工程、Swing 启动窗口、需求规格、UML、模块接口和 SQLite 建表脚本。账号、物品、流转、评价与统计模块进入后续迭代。
 
 ## 技术与目标
 
@@ -42,10 +42,13 @@ reports/                   实验报告、演示与交付材料
 
 ## 协作入口
 
+- [第一周交付记录](docs/week-01.md)
 - [实验要求与交付清单](docs/requirements.md)
 - [8 周迭代计划](docs/iterations.md)
 - [三人分工与周会记录](docs/team.md)
 - [架构与设计模式规划](docs/architecture.md)
+- [UML 类图与时序图](docs/uml.md)
+- [SQLite 数据库设计](database/README.md)
 - [测试计划](docs/testing.md)
 - [重构记录](docs/refactoring.md)
 - [提交和协作规范](CONTRIBUTING.md)
