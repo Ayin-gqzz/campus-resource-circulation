@@ -1,6 +1,6 @@
 # 测试计划
 
-当前未编写业务测试。Maven 已配置 JUnit 5 和 Surefire，GitHub Actions 执行 `mvn clean verify`，目前仅能验证工程编译和打包。
+Maven 使用 JUnit 5 和 Surefire，GitHub Actions 执行 `mvn clean verify`。现有 Demo 集成测试使用独立的临时 SQLite 数据库，覆盖发布、意向、交接、互评、权限校验、取消后重新流转及重开数据库后的持久化。
 
 | 层次 | 后续重点 |
 | --- | --- |

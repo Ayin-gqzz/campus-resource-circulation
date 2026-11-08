@@ -1,6 +1,6 @@
 # 第一周数据库设计
 
-[001_initial.sql](001_initial.sql) 用于创建版本 1 的空数据库。应用后续通过 JDBC 接入，当前可用 SQLite 3.37 及以上版本执行脚本。
+[001_initial.sql](001_initial.sql) 用于创建版本 1 的空数据库，可用 SQLite 3.37 及以上版本执行。Swing Demo 通过 JDBC 读取 Jar 中的同一脚本，在首次启动时创建独立的演示库并写入示例记录。
 
 ## 数据表
 
