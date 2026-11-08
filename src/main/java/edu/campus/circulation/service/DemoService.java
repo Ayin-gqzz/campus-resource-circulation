@@ -89,9 +89,13 @@ public final class DemoService {
                 LEFT JOIN reviews r ON r.exchange_id = e.id AND r.reviewer_id = ?
                 WHERE e.requester_id = ? OR i.owner_id = ?
                 ORDER BY e.id DESC
-                """, row -> new Exchange(row.getLong("id"), row.getString("title"),
-                row.getLong("owner_id"), row.getLong("requester_id"), Status.valueOf(row.getString("status")),
-                row.getString("message"), row.getObject("stars", Integer.class)),
+                """, row -> {
+                    int rating = row.getInt("stars");
+                    Integer stars = row.wasNull() ? null : rating;
+                    return new Exchange(row.getLong("id"), row.getString("title"),
+                            row.getLong("owner_id"), row.getLong("requester_id"),
+                            Status.valueOf(row.getString("status")), row.getString("message"), stars);
+                },
                 actor.id(), actor.id(), actor.id()));
     }
 
