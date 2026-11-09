@@ -2,7 +2,7 @@
 
 2026 年《软件构造》分组实验项目：面向高校校园的闲置物品发布、检索、交换与售卖管理桌面应用。
 
-**当前状态为第一周设计初版。** 已提供 Maven 工程、Swing 启动窗口、需求规格、UML、模块接口和 SQLite 建表脚本。账号、物品、流转、评价与统计模块进入后续迭代。
+**当前状态：已完成需求设计、SQLite 建表脚本、领域模型（`domain`）与 JDBC 数据访问层（`repository`），并通过 49 个 JUnit 5 数据层集成测试。** 业务服务层（`service`）与 Swing 业务界面（`ui`）进入下一阶段开发。
 
 ## 技术与目标
 
@@ -21,7 +21,7 @@ mvn clean verify
 java -jar target/campus-resource-circulation-0.1.0-SNAPSHOT.jar
 ```
 
-当前启动后显示项目说明窗口，不会创建数据库。SQLite 驱动和 JUnit 依赖已配置，后续实现对应模块时使用。GitHub Actions 会编译并打包；当前还没有业务测试用例，构建成功不代表实验功能已完成。
+当前启动后显示项目说明窗口。SQLite 数据访问层与 49 个 JUnit 5 仓储集成测试已就绪，可通过 `mvn clean verify` 运行全部测试并生成可执行 Jar。
 
 ## 项目结构
 
@@ -44,6 +44,7 @@ reports/                   实验报告、演示与交付材料
 
 - [第一周交付记录](docs/week-01.md)
 - [实验要求与交付清单](docs/requirements.md)
+- [项目需求分析文档](docs/requirements-analysis.md)
 - [8 周迭代计划](docs/iterations.md)
 - [三人分工与周会记录](docs/team.md)
 - [架构与设计模式规划](docs/architecture.md)

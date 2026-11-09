@@ -36,18 +36,17 @@
 | --- | --- |
 | `User`、`Role` | `users`；`Role` 取值 `STUDENT` / `ADMIN` 与列 CHECK 一致，用户名的 ASCII 大小写归一由列定义保证 |
 | `Category` | `categories`；`avoidedGrams`、`factorSource` 用可空 `Long`、`String` 表示必须成对的列 |
-| `Item`、`ItemDraft`、`ItemCondition`、`TradeType`、`ItemStatus`、`ItemSearchFilter` | `items`、`item_tags`；`Item` 是携带按标签名排序的标签列表的读模型，`ItemDraft` 是发布和编辑的输入，`ItemSearchFilter` 的空字段表示不限制 |
-| `Favorite` | `favorites`；只暴露增删查，重复收藏被忽略，读取返回 `Item`。表中有 `created_at`，当前实现未对外返回该字段 |
-| `Exchange`、`ExchangeStatus`、`ExchangeMessage` | `exchanges`、`exchange_messages`；`completedAt` 对应仅在完成状态有值的列 |
-| `Review`、`CreditSummary`、`CategoryStatRow`、`StatsFilter` | `reviews` 及统计查询结果；`CreditSummary.averageStars` 保留一位小数且无评价时为 `null`，`CategoryStatRow` 保留当前分类名与当前系数，`StatsFilter` 的时间为半开区间、空值表示不限 |
+| `Item`、`ItemDraft`、`ItemCondition`、`TradeType`、`ItemStatus`、`ItemSearchFilter` | `items`、`item_tags`、`favorites`；`Item` 携带按名称排序的标签列表，`ItemDraft` 是发布和编辑输入，`ItemSearchFilter` 空字段表示不限制 |
+| `Exchange`、`ExchangeStatus`、`ExchangeMessage`、`StatsFilter`、`CategoryStatRow` | `exchanges`、`exchange_messages` 及已完成流转按分类聚合结果；`StatsFilter` 的完成时间为左闭右开区间、空值表示不限 |
+| `Review`、`CreditSummary` | `reviews` 及用户信用汇总；`CreditSummary.averageStars` 保留一位小数且无评价时为 `null` |
 
 | 实现类 | 主要表 | 职责 |
 | --- | --- | --- |
 | `JdbcUserRepository` | `users` | 注册写入、按 ID / 用户名查询、学生列表、启用状态更新 |
 | `JdbcCategoryRepository` | `categories` | 新增与整行更新、按 ID / 名称查询、按启用状态过滤 |
 | `JdbcItemRepository` | `items`、`item_tags`、`favorites` | 发布时写物品与标签、按预期状态编辑字段或改状态、发布人列表、组合条件检索、收藏增删查 |
-| `JdbcExchangeRepository` | `exchanges`、`exchange_messages` | 意向与首条留言原子写入、追加留言、参与者 / 物品历史、按预期旧状态改状态、批量拒绝或取消待处理意向 |
-| `JdbcReviewRepository` | `reviews` | 评价写入与查询、信用汇总、按分类统计已完成流转 |
+| `JdbcExchangeRepository` | `exchanges`、`exchange_messages` | 意向与首条留言原子写入、追加留言、参与者 / 物品历史、按预期旧状态改状态、批量拒绝或取消待处理意向、按分类统计已完成流转 |
+| `JdbcReviewRepository` | `reviews` | 评价写入与查询、信用均分汇总 |
 
 状态变更方法都以预期旧状态作为 UPDATE 条件并返回 `boolean`，影响行数不符时不抛异常，由服务层据此让事务回滚。意向与物品的跨表动作（接受、取消、完成、下架）由服务层在 `inWriteTransaction` 中组合多个仓储调用，不接受单步部分提交。部分唯一索引和组合主键在服务层校验之外兜底，冲突转为 `UniqueConstraintException`。
 
@@ -80,9 +79,9 @@ DataAccessException
 
 | 模式 | 应用位置 | 预期解决的问题 |
 | --- | --- | --- |
-| 策略 | 不同物品类别的减排估算策略 | 分离类别算法，避免集中堆叠条件判断 |
+| 策略 | 密码哈希校验策略或流转动作处理策略 | 隔离算法或状态动作分支，便于测试替换与扩展，避免生造空壳分类子类 |
 | 观察者 | 流转状态变化通知列表和统计视图 | 降低业务状态变化与多个界面刷新的耦合 |
-| 工厂方法 | 后台统计报表的创建与导出流程 | 在共享导出流程中创建不同报表，支持扩展报表类型 |
+| 工厂方法 | 统计报表的创建与导出流程 | 在共享导出流程中组装不同角色范围的统计快照 |
 
 候选方案应在实际业务需要时落地。最终报告需要给出对应类、调用关系、替代方案和测试依据；不能仅用接口或类名宣称完成设计模式。
 
