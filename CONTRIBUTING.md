@@ -1,6 +1,6 @@
 # 小组协作规范
 
-1. 从 `main` 创建短期分支，例如 `feature/login`、`fix/item-validation`、`docs/database-design`。
+1. 从 `main` 创建短期分支，例如 `feature/login`、`fix/item-validation`、`docs/database-design`、`docs/optimization`。
 2. 提交前执行 `mvn clean verify`，修改业务规则时同步维护相应测试。
 3. 发起 Pull Request，说明问题、变更行为、验证方法，由另一位成员检查后合并。
 4. 每个提交聚焦一个明确变更，可采用 `feat:`、`fix:`、`test:`、`docs:`、`refactor:`、`build:` 前缀。
