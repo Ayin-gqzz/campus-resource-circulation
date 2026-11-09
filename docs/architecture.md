@@ -28,6 +28,39 @@
 
 仓储接口按聚合划分为用户、分类、物品、流转和评价。每个仓储方法通过 JDBC 参数化 SQL 访问存储。查询关键词先转义通配符，再作为绑定参数使用。跨仓储的写操作由服务层在同一个连接和事务内执行，仓储方法不单独提交。
 
+## 数据层实现映射
+
+上述仓储接口与领域类型已落地：`domain` 用 record 表示实体和查询结果，用枚举表示受约束取值；`repository` 用接口 + `Jdbc*` 实现，并以 `DatabaseManager` 作为唯一构造器依赖。SQL 直接内联在实现类中并全部使用绑定参数，结果集到 record 的转换集中在各实现类的私有映射方法。
+
+| 领域类型 | 存储与用途 |
+| --- | --- |
+| `User`、`Role` | `users`；`Role` 取值 `STUDENT` / `ADMIN` 与列 CHECK 一致，用户名的 ASCII 大小写归一由列定义保证 |
+| `Category` | `categories`；`avoidedGrams`、`factorSource` 用可空 `Long`、`String` 表示必须成对的列 |
+| `Item`、`ItemDraft`、`ItemCondition`、`TradeType`、`ItemStatus`、`ItemSearchFilter` | `items`、`item_tags`；`Item` 是携带按标签名排序的标签列表的读模型，`ItemDraft` 是发布和编辑的输入，`ItemSearchFilter` 的空字段表示不限制 |
+| `Favorite` | `favorites`；只暴露增删查，重复收藏被忽略，读取返回 `Item`。表中有 `created_at`，当前实现未对外返回该字段 |
+| `Exchange`、`ExchangeStatus`、`ExchangeMessage` | `exchanges`、`exchange_messages`；`completedAt` 对应仅在完成状态有值的列 |
+| `Review`、`CreditSummary`、`CategoryStatRow`、`StatsFilter` | `reviews` 及统计查询结果；`CreditSummary.averageStars` 保留一位小数且无评价时为 `null`，`CategoryStatRow` 保留当前分类名与当前系数，`StatsFilter` 的时间为半开区间、空值表示不限 |
+
+| 实现类 | 主要表 | 职责 |
+| --- | --- | --- |
+| `JdbcUserRepository` | `users` | 注册写入、按 ID / 用户名查询、学生列表、启用状态更新 |
+| `JdbcCategoryRepository` | `categories` | 新增与整行更新、按 ID / 名称查询、按启用状态过滤 |
+| `JdbcItemRepository` | `items`、`item_tags`、`favorites` | 发布时写物品与标签、按预期状态编辑字段或改状态、发布人列表、组合条件检索、收藏增删查 |
+| `JdbcExchangeRepository` | `exchanges`、`exchange_messages` | 意向与首条留言原子写入、追加留言、参与者 / 物品历史、按预期旧状态改状态、批量拒绝或取消待处理意向 |
+| `JdbcReviewRepository` | `reviews` | 评价写入与查询、信用汇总、按分类统计已完成流转 |
+
+状态变更方法都以预期旧状态作为 UPDATE 条件并返回 `boolean`，影响行数不符时不抛异常，由服务层据此让事务回滚。意向与物品的跨表动作（接受、取消、完成、下架）由服务层在 `inWriteTransaction` 中组合多个仓储调用，不接受单步部分提交。部分唯一索引和组合主键在服务层校验之外兜底，冲突转为 `UniqueConstraintException`。
+
+异常继承 `RuntimeException`，层次为：
+
+```text
+DataAccessException
+├── UniqueConstraintException
+└── ForeignKeyException
+```
+
+`SqlExceptions.translate` 按 SQLite 扩展错误码 2067 / 1555（唯一、主键）与 787（外键）分类，并兼容驱动只返回错误码 19 时按消息文本判断；CHECK 约束、表结构冲突等其他失败归入 `DataAccessException`。连接管理、初始化与事务边界见[数据库设计](../database/README.md#应用初始化databasemanager)。
+
 ## 状态与事务
 
 | 操作 | 意向变化 | 物品变化 |

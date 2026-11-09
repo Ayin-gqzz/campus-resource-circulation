@@ -1,6 +1,6 @@
 # 第一周数据库设计
 
-[001_initial.sql](001_initial.sql) 用于创建版本 1 的空数据库。应用后续通过 JDBC 接入，当前可用 SQLite 3.37 及以上版本执行脚本。
+[001_initial.sql](001_initial.sql) 用于创建版本 1 的空数据库。应用通过 xerial `sqlite-jdbc` 3.46.1.0 接入，脚本也可用 SQLite 3.37 及以上版本命令行执行。
 
 ## 数据表
 
@@ -25,6 +25,28 @@ sqlite3 week-01.db ".read database/001_initial.sql"
 sqlite3 week-01.db "PRAGMA user_version; PRAGMA foreign_key_check;"
 ```
 
-首次执行后 `user_version` 返回 `1`，外键检查没有结果。脚本用于空数据库，仅执行一次。后续应用应根据 `user_version` 选择初始化或升级路径，遇到未知版本停止并提示。每个 JDBC 连接在开始事务前都需开启外键检查。
+首次执行后 `user_version` 返回 `1`，外键检查没有结果。脚本用于空数据库，仅执行一次。
 
-时间字段统一由应用写为固定毫秒精度的 UTC 时间文本，例如 `2026-11-08T08:30:00.000Z`，保证时间范围与文本排序一致。接受、取消、完成、下架及提交意向都应在单个写事务中完成，详见[状态与事务](../docs/architecture.md#状态与事务)。
+### 应用初始化（DatabaseManager）
+
+`DatabaseManager.initialize()` 在启动时调用一次，先读取 `PRAGMA user_version` 再选择路径：
+
+| `user_version` | 行为 |
+| --- | --- |
+| `0` | 载入脚本并逐条执行，完成后版本为 1 |
+| `1` | 直接返回，重复调用不产生副作用 |
+| 其他 | 抛出 `DataAccessException`，消息为 `Unsupported database version: <版本>`，不修改数据库 |
+
+脚本按 classpath 资源 `/database/001_initial.sql` 读取（Maven 将 `database/001_initial.sql` 复制到该位置），资源缺席时回退到工作目录下的 `database/001_initial.sql`。初始化按 `;` 拆分脚本并逐条执行，`BEGIN IMMEDIATE`、`PRAGMA user_version = 1` 与 `COMMIT` 都由脚本自身承担；任一条失败则整体 `ROLLBACK`，数据库保持 `user_version = 0`，不会留下半成品表结构。
+
+### 连接与事务
+
+每个连接在 `DriverManager.getConnection` 之后立即执行 `PRAGMA foreign_keys = ON` 和 `PRAGMA busy_timeout = 5000`，外键检查不依赖调用方，写锁冲突最多等待 5 秒。
+
+写操作用 `DatabaseManager.inWriteTransaction` 以 `BEGIN IMMEDIATE` 开启，在读写之前先取得保留锁，避免读到状态后升级锁失败。事务连接绑定到当前线程：嵌套的 `inWriteTransaction` 复用同一连接且不提前提交；`executeWithConnection` 在事务内复用连接，在事务外新开连接并在回调结束后关闭，供仓储方法自行组合。任一步抛出异常都整体 `ROLLBACK`，`SQLException` 经 `SqlExceptions` 转换为 `DataAccessException`、`UniqueConstraintException` 或 `ForeignKeyException`。仓储方法自身不提交，跨表写操作由服务层在同一个写事务内组合。
+
+### 时间格式
+
+时间字段统一由 `UtcTimestamps` 写为固定毫秒精度的 UTC 文本，格式为 `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`，例如 `2026-11-08T08:30:00.000Z`，保证时间范围与文本排序一致。
+
+接受、取消、完成、下架及提交意向都应在单个写事务中完成，详见[状态与事务](../docs/architecture.md#状态与事务)。
