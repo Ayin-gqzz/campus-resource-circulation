@@ -14,7 +14,6 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -191,42 +190,18 @@ public final class JdbcItemRepository implements ItemRepository {
 
     private static List<Item> readItems(Connection connection, String sql, Object... parameters)
             throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+        try (PreparedStatement statement = connection.prepareStatement(sql);
+             PreparedStatement tagStatement = connection.prepareStatement(
+                     "SELECT tag FROM item_tags WHERE item_id = ? ORDER BY tag")) {
             bindParameters(statement, parameters);
-            List<ItemRow> rows = new ArrayList<>();
+            List<Item> items = new ArrayList<>();
             try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
-                    rows.add(mapRow(result));
+                    items.add(mapItem(result, tagStatement));
                 }
             }
-            return withTags(connection, rows);
+            return List.copyOf(items);
         }
-    }
-
-    /** Loads each item's tags ordered by tag, matching the {@code item_tags} primary key order. */
-    private static List<Item> withTags(Connection connection, List<ItemRow> rows) throws SQLException {
-        if (rows.isEmpty()) {
-            return List.of();
-        }
-        Map<Long, List<String>> tagsByItem = new HashMap<>();
-        try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT tag FROM item_tags WHERE item_id = ? ORDER BY tag")) {
-            for (ItemRow row : rows) {
-                List<String> tags = new ArrayList<>();
-                statement.setLong(1, row.id());
-                try (ResultSet result = statement.executeQuery()) {
-                    while (result.next()) {
-                        tags.add(result.getString(1));
-                    }
-                }
-                tagsByItem.put(row.id(), List.copyOf(tags));
-            }
-        }
-        List<Item> items = new ArrayList<>(rows.size());
-        for (ItemRow row : rows) {
-            items.add(row.toItem(tagsByItem.get(row.id())));
-        }
-        return List.copyOf(items);
     }
 
     private static void bindParameters(PreparedStatement statement, Object[] parameters) throws SQLException {
@@ -287,24 +262,24 @@ public final class JdbcItemRepository implements ItemRepository {
         return keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
-    private static ItemRow mapRow(ResultSet result) throws SQLException {
+    private static Item mapItem(ResultSet result, PreparedStatement tagStatement) throws SQLException {
+        long id = result.getLong("id");
         long storedPriceCents = result.getLong("price_cents");
         Long priceCents = result.wasNull() ? null : storedPriceCents;
-        return new ItemRow(result.getLong("id"), result.getLong("owner_id"), result.getLong("category_id"),
+        List<String> tags = new ArrayList<>();
+        tagStatement.setLong(1, id);
+        try (ResultSet tagResult = tagStatement.executeQuery()) {
+            while (tagResult.next()) {
+                tags.add(tagResult.getString(1));
+            }
+        }
+        return new Item(id, result.getLong("owner_id"), result.getLong("category_id"),
                 result.getString("title"), result.getString("description"),
                 ItemCondition.valueOf(result.getString("condition")),
                 TradeType.valueOf(result.getString("trade_type")),
                 priceCents, result.getString("swap_note"),
                 ItemStatus.valueOf(result.getString("status")),
+                List.copyOf(tags),
                 UtcTimestamps.parse(result.getString("created_at")));
-    }
-
-    private record ItemRow(long id, long ownerId, long categoryId, String title, String description,
-                           ItemCondition condition, TradeType tradeType, Long priceCents, String swapNote,
-                           ItemStatus status, Instant createdAt) {
-        Item toItem(List<String> tags) {
-            return new Item(id, ownerId, categoryId, title, description, condition, tradeType, priceCents,
-                    swapNote, status, tags, createdAt);
-        }
     }
 }

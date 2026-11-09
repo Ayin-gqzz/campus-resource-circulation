@@ -1,8 +1,10 @@
 package edu.campus.circulation.repository;
 
+import edu.campus.circulation.domain.CategoryStatRow;
 import edu.campus.circulation.domain.Exchange;
 import edu.campus.circulation.domain.ExchangeMessage;
 import edu.campus.circulation.domain.ExchangeStatus;
+import edu.campus.circulation.domain.StatsFilter;
 
 import java.time.Instant;
 import java.util.List;
@@ -20,4 +22,5 @@ public interface ExchangeRepository {
     int rejectOtherPendingByItem(long itemId, long excludedExchangeId);
     int cancelPendingByUser(long userId);
     int cancelPendingByItem(long itemId);
+    List<CategoryStatRow> summarizeCompletedByCategory(StatsFilter filter);
 }

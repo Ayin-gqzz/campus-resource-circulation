@@ -364,22 +364,22 @@ class ExchangeAndReviewRepositoryTest {
         CategoryStatRow oneUnknown = new CategoryStatRow(unknown, "Unknown", 1, null, null);
         CategoryStatRow oneZero = new CategoryStatRow(zero, "Zero", 1, 0L, "Zero estimate v1");
         assertEquals(List.of(twoBooks, oneUnknown, oneZero),
-                reviews.summarizeCompletedByCategory(new StatsFilter(from, to, null, null)));
+                exchanges.summarizeCompletedByCategory(new StatsFilter(from, to, null, null)));
         assertEquals(List.of(twoBooks, oneUnknown),
-                reviews.summarizeCompletedByCategory(new StatsFilter(from, to, null, bob)));
+                exchanges.summarizeCompletedByCategory(new StatsFilter(from, to, null, bob)));
         assertEquals(List.of(new CategoryStatRow(books, "Books", 1, 1250L, "Book study v1"), oneZero),
-                reviews.summarizeCompletedByCategory(new StatsFilter(from, to, null, alice)));
+                exchanges.summarizeCompletedByCategory(new StatsFilter(from, to, null, alice)));
         assertEquals(List.of(twoBooks),
-                reviews.summarizeCompletedByCategory(new StatsFilter(from, to, books, bob)));
-        assertEquals(List.of(), reviews.summarizeCompletedByCategory(new StatsFilter(from, to, unknown, alice)));
-        assertEquals(List.of(), reviews.summarizeCompletedByCategory(new StatsFilter(from, to, null, 9999L)));
-        assertEquals(List.of(), reviews.summarizeCompletedByCategory(new StatsFilter(to, to, null, null)));
+                exchanges.summarizeCompletedByCategory(new StatsFilter(from, to, books, bob)));
+        assertEquals(List.of(), exchanges.summarizeCompletedByCategory(new StatsFilter(from, to, unknown, alice)));
+        assertEquals(List.of(), exchanges.summarizeCompletedByCategory(new StatsFilter(from, to, null, 9999L)));
+        assertEquals(List.of(), exchanges.summarizeCompletedByCategory(new StatsFilter(to, to, null, null)));
         assertEquals(List.of(new CategoryStatRow(books, "Books", 5, 1250L, "Book study v1"), oneUnknown, oneZero),
-                reviews.summarizeCompletedByCategory(new StatsFilter(null, null, null, null)));
+                exchanges.summarizeCompletedByCategory(new StatsFilter(null, null, null, null)));
         assertEquals(List.of(new CategoryStatRow(books, "Books", 3, 1250L, "Book study v1"), oneUnknown, oneZero),
-                reviews.summarizeCompletedByCategory(new StatsFilter(null, to, null, null)));
+                exchanges.summarizeCompletedByCategory(new StatsFilter(null, to, null, null)));
         assertEquals(List.of(new CategoryStatRow(books, "Books", 2, 1250L, "Book study v1")),
-                reviews.summarizeCompletedByCategory(new StatsFilter(to, null, null, null)));
+                exchanges.summarizeCompletedByCategory(new StatsFilter(to, null, null, null)));
     }
 
     private void accept(long exchangeId, long itemId, ItemStatus expectedItemStatus) {

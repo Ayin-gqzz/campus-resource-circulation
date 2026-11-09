@@ -1,8 +1,10 @@
 package edu.campus.circulation.repository;
 
+import edu.campus.circulation.domain.CategoryStatRow;
 import edu.campus.circulation.domain.Exchange;
 import edu.campus.circulation.domain.ExchangeMessage;
 import edu.campus.circulation.domain.ExchangeStatus;
+import edu.campus.circulation.domain.StatsFilter;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -172,6 +174,55 @@ public final class JdbcExchangeRepository implements ExchangeRepository {
                     """)) {
                 statement.setLong(1, itemId);
                 return statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public List<CategoryStatRow> summarizeCompletedByCategory(StatsFilter filter) {
+        return database.executeWithConnection(connection -> {
+            StringBuilder sql = new StringBuilder("""
+                    SELECT c.id, c.name, COUNT(*) AS completed_count, c.avoided_grams, c.factor_source
+                    FROM exchanges e JOIN items i ON i.id = e.item_id JOIN categories c ON c.id = i.category_id
+                    WHERE e.status = 'COMPLETED'""");
+            List<Object> parameters = new ArrayList<>();
+            if (filter.fromInclusive() != null) {
+                sql.append(" AND e.completed_at >= ?");
+                parameters.add(UtcTimestamps.format(filter.fromInclusive()));
+            }
+            if (filter.toExclusive() != null) {
+                sql.append(" AND e.completed_at < ?");
+                parameters.add(UtcTimestamps.format(filter.toExclusive()));
+            }
+            if (filter.categoryId() != null) {
+                sql.append(" AND i.category_id = ?");
+                parameters.add(filter.categoryId());
+            }
+            if (filter.participantUserId() != null) {
+                sql.append(" AND (e.requester_id = ? OR i.owner_id = ?)");
+                parameters.add(filter.participantUserId());
+                parameters.add(filter.participantUserId());
+            }
+            sql.append(" GROUP BY c.id, c.name, c.avoided_grams, c.factor_source ORDER BY c.id ASC");
+            try (PreparedStatement statement = connection.prepareStatement(sql.toString())) {
+                for (int index = 0; index < parameters.size(); index++) {
+                    Object value = parameters.get(index);
+                    if (value instanceof Long longValue) {
+                        statement.setLong(index + 1, longValue);
+                    } else {
+                        statement.setString(index + 1, (String) value);
+                    }
+                }
+                List<CategoryStatRow> rows = new ArrayList<>();
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        long grams = result.getLong("avoided_grams");
+                        Long avoidedGrams = result.wasNull() ? null : grams;
+                        rows.add(new CategoryStatRow(result.getLong("id"), result.getString("name"),
+                                result.getLong("completed_count"), avoidedGrams, result.getString("factor_source")));
+                    }
+                }
+                return List.copyOf(rows);
             }
         });
     }
