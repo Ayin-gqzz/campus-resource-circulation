@@ -1,6 +1,8 @@
 # 第一周数据库设计
 
-[001_initial.sql](001_initial.sql) 用于创建版本 1 的空数据库。应用通过 xerial `sqlite-jdbc` 3.46.1.0 接入，脚本也可用 SQLite 3.37 及以上版本命令行执行。
+[001_initial.sql](001_initial.sql) 用于创建版本 1 的空数据库。应用通过 xerial `sqlite-jdbc` 3.46.1.0 接入，脚本也可用 SQLite 3.37 及以上版本命令行执行。Swing Demo 使用同一个 `DatabaseManager` 和 JDBC 仓储。首次启动时创建独立演示库并写入示例数据，已有演示库继续使用原有记录。
+
+[002_meetup_locations.sql](002_meetup_locations.sql) 将版本 1 升级到版本 2。它新增 `item_meetup_locations`，以物品编号关联校区与具体地点。每件物品最多一条地点记录，校区仅允许南湖和桂子山。旧物品可由发布人补填，历史记录保留原数据。
 
 ## 数据表
 
@@ -22,22 +24,24 @@
 
 ```shell
 sqlite3 week-01.db ".read database/001_initial.sql"
+sqlite3 week-01.db ".read database/002_meetup_locations.sql"
 sqlite3 week-01.db "PRAGMA user_version; PRAGMA foreign_key_check;"
 ```
 
-首次执行后 `user_version` 返回 `1`，外键检查没有结果。脚本用于空数据库，仅执行一次。
+两份脚本按顺序执行后，`user_version` 返回 `2`，外键检查没有结果。升级已有版本 1 数据库时只执行第二份脚本。
 
 ### 应用初始化（DatabaseManager）
 
-`DatabaseManager.initialize()` 在启动时调用一次，先读取 `PRAGMA user_version` 再选择路径：
+`DatabaseManager.initialize()` 在启动时调用一次。它先取得 SQLite 写事务，再读取 `PRAGMA user_version`，因此同时启动的实例按顺序检查版本：
 
 | `user_version` | 行为 |
 | --- | --- |
-| `0` | 载入脚本并逐条执行，完成后版本为 1 |
-| `1` | 直接返回，重复调用不产生副作用 |
+| `0` | 按顺序执行两个脚本，完成后版本为 2 |
+| `1` | 执行地点迁移脚本，旧数据保留 |
+| `2` | 直接返回，重复调用不产生副作用 |
 | 其他 | 抛出 `DataAccessException`，消息为 `Unsupported database version: <版本>`，不修改数据库 |
 
-脚本按 classpath 资源 `/database/001_initial.sql` 读取（Maven 将 `database/001_initial.sql` 复制到该位置），资源缺席时回退到工作目录下的 `database/001_initial.sql`。初始化按 `;` 拆分脚本并逐条执行，`BEGIN IMMEDIATE`、`PRAGMA user_version = 1` 与 `COMMIT` 都由脚本自身承担；任一条失败则整体 `ROLLBACK`，数据库保持 `user_version = 0`，不会留下半成品表结构。
+应用优先从 classpath 的 `/database/` 读取脚本，并在同一事务中执行建表与版本更新。命令行单独执行脚本时使用脚本里的事务语句。执行失败时回滚并保留升级前的数据库版本。
 
 ### 连接与事务
 

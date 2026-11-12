@@ -38,40 +38,45 @@ public final class DatabaseManager {
     }
 
     public void initialize() {
-        try (Connection connection = openConnection(); Statement statement = connection.createStatement()) {
-            try (ResultSet result = statement.executeQuery("PRAGMA user_version")) {
-                int version = result.next() ? result.getInt(1) : 0;
-                if (version == 1) {
-                    return;
+        inWriteTransaction(() -> executeWithConnection(connection -> {
+            try (Statement statement = connection.createStatement()) {
+                int version;
+                try (ResultSet result = statement.executeQuery("PRAGMA user_version")) {
+                    version = result.next() ? result.getInt(1) : 0;
                 }
-                if (version != 0) {
+                if (version < 0 || version > 2) {
                     throw new DataAccessException("Unsupported database version: " + version);
                 }
-            }
-            String script = loadInitialSchema();
-            try {
-                for (String sql : script.split(";")) {
-                    if (!sql.isBlank()) {
-                        statement.execute(sql);
-                    }
+                if (version == 0) {
+                    executeSchema(statement, "001_initial.sql");
                 }
-            } catch (SQLException exception) {
-                rollback(connection, exception);
-                throw exception;
+                if (version < 2) {
+                    executeSchema(statement, "002_meetup_locations.sql");
+                }
             }
-        } catch (SQLException exception) {
-            throw SqlExceptions.translate(exception);
+            return null;
+        }));
+    }
+
+    private void executeSchema(Statement statement, String filename) throws SQLException {
+        for (String entry : loadSchema(filename).split(";")) {
+            String sql = entry.strip();
+            // The scripts also support standalone execution in the SQLite CLI.
+            if (!sql.isEmpty() && !sql.equals("PRAGMA foreign_keys = ON")
+                    && !sql.equals("BEGIN IMMEDIATE") && !sql.equals("COMMIT")) {
+                statement.execute(sql);
+            }
         }
     }
 
-    private String loadInitialSchema() {
-        try (InputStream resource = DatabaseManager.class.getResourceAsStream("/database/001_initial.sql")) {
+    private String loadSchema(String filename) {
+        try (InputStream resource = DatabaseManager.class.getResourceAsStream("/database/" + filename)) {
             if (resource != null) {
                 return new String(resource.readAllBytes(), StandardCharsets.UTF_8);
             }
-            return Files.readString(Path.of("database", "001_initial.sql"), StandardCharsets.UTF_8);
+            return Files.readString(Path.of("database", filename), StandardCharsets.UTF_8);
         } catch (IOException exception) {
-            throw new DataAccessException("Cannot load database/001_initial.sql", exception);
+            throw new DataAccessException("Cannot load database/" + filename, exception);
         }
     }
 

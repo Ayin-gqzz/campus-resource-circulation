@@ -74,6 +74,11 @@ classDiagram
     User "1" --> "0..*" Item : publishes
     Category "1" --> "0..*" Item : classifies
     Item "1" --> "0..*" Exchange
+    Item "1" *-- "0..1" MeetupLocation
+    class MeetupLocation {
+        +Campus campus
+        +String place
+    }
     User "1" --> "0..*" Exchange : requests
     Exchange "1" *-- "1..*" ExchangeMessage
     User "1" --> "0..*" ExchangeMessage : sends
@@ -172,25 +177,34 @@ sequenceDiagram
     Owner->>UI: 接受意向
     UI->>Trade: transition(exchangeId, ACCEPT)
     Trade->>DB: inWriteTransaction
+    Trade->>ItemRepo: updateStatus(itemId, AVAILABLE, RESERVED)
     Trade->>ExRepo: transitionStatus(exchangeId, PENDING, ACCEPTED, null)
     Trade->>ExRepo: rejectOtherPendingByItem(itemId, exchangeId)
-    Trade->>ItemRepo: updateStatus(itemId, AVAILABLE, RESERVED)
     alt 状态均符合预期
         DB-->>Trade: 提交事务
         Trade-->>UI: 显示已接受
-        Note over Buyer,Owner: 双方线下完成交接
-        Owner->>UI: 确认流转完成
-        UI->>Trade: transition(exchangeId, COMPLETE)
-        Trade->>DB: inWriteTransaction
-        Trade->>ExRepo: transitionStatus(exchangeId, ACCEPTED, COMPLETED, now)
-        Trade->>ItemRepo: updateStatus(itemId, RESERVED, COMPLETED)
-        DB-->>Trade: 提交事务
-        Trade-->>UI: 显示已完成
-        Buyer->>UI: 评价发布人
-        UI->>Rate: submit(exchangeId, stars, comment)
-        Rate->>ExRepo: findById(exchangeId) 校验完成状态与参与身份
-        Rate->>RevRepo: insert(review)
-        Rate-->>UI: 显示评价结果
+        alt 任一参与人取消
+            UI->>Trade: transition(exchangeId, CANCEL)
+            Trade->>DB: inWriteTransaction
+            Trade->>ItemRepo: updateStatus(itemId, RESERVED, AVAILABLE)
+            Trade->>ExRepo: transitionStatus(exchangeId, ACCEPTED, CANCELLED, null)
+            DB-->>Trade: 提交事务
+            Trade-->>UI: 显示已取消，物品恢复在架
+        else 双方完成交接
+            Note over Buyer,Owner: 双方线下完成交接
+            Owner->>UI: 确认流转完成
+            UI->>Trade: transition(exchangeId, COMPLETE)
+            Trade->>DB: inWriteTransaction
+            Trade->>ItemRepo: updateStatus(itemId, RESERVED, COMPLETED)
+            Trade->>ExRepo: transitionStatus(exchangeId, ACCEPTED, COMPLETED, now)
+            DB-->>Trade: 提交事务
+            Trade-->>UI: 显示已完成
+            Buyer->>UI: 评价发布人
+            UI->>Rate: submit(exchangeId, stars, comment)
+            Rate->>ExRepo: findById(exchangeId) 校验完成状态与参与身份
+            Rate->>RevRepo: insert(review)
+            Rate-->>UI: 显示评价结果
+        end
     else 权限或状态冲突
         DB-->>Trade: 回滚事务
         Trade-->>UI: 提示操作失败并刷新记录

@@ -5,6 +5,7 @@ import edu.campus.circulation.domain.ItemCondition;
 import edu.campus.circulation.domain.ItemDraft;
 import edu.campus.circulation.domain.ItemSearchFilter;
 import edu.campus.circulation.domain.ItemStatus;
+import edu.campus.circulation.domain.MeetupLocation;
 import edu.campus.circulation.domain.TradeType;
 
 import java.sql.Connection;
@@ -23,8 +24,8 @@ import java.util.Optional;
 public final class JdbcItemRepository implements ItemRepository {
     private static final String ITEM_COLUMNS = """
             SELECT i.id, i.owner_id, i.category_id, i.title, i.description, i.condition,
-                   i.trade_type, i.price_cents, i.swap_note, i.status, i.created_at
-            FROM items i""";
+                   i.trade_type, i.price_cents, i.swap_note, i.status, i.created_at, m.campus, m.location
+            FROM items i LEFT JOIN item_meetup_locations m ON m.item_id = i.id""";
 
     private final DatabaseManager database;
 
@@ -89,6 +90,22 @@ public final class JdbcItemRepository implements ItemRepository {
                 statement.setString(1, newStatus.name());
                 statement.setLong(2, itemId);
                 statement.setString(3, expectedStatus.name());
+                return statement.executeUpdate() == 1;
+            }
+        });
+    }
+
+    @Override
+    public boolean setInitialMeetupLocation(long itemId, MeetupLocation location) {
+        return database.executeWithConnection(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                    INSERT INTO item_meetup_locations (item_id, campus, location)
+                    SELECT id, ?, ? FROM items WHERE id = ? AND status IN ('AVAILABLE', 'RESERVED')
+                    ON CONFLICT (item_id) DO NOTHING
+                    """)) {
+                statement.setString(1, location.campus().name());
+                statement.setString(2, location.place());
+                statement.setLong(3, itemId);
                 return statement.executeUpdate() == 1;
             }
         });
@@ -273,6 +290,9 @@ public final class JdbcItemRepository implements ItemRepository {
                 tags.add(tagResult.getString(1));
             }
         }
+        String campus = result.getString("campus");
+        MeetupLocation location = campus == null ? null
+                : new MeetupLocation(MeetupLocation.Campus.valueOf(campus), result.getString("location"));
         return new Item(id, result.getLong("owner_id"), result.getLong("category_id"),
                 result.getString("title"), result.getString("description"),
                 ItemCondition.valueOf(result.getString("condition")),
@@ -280,6 +300,6 @@ public final class JdbcItemRepository implements ItemRepository {
                 priceCents, result.getString("swap_note"),
                 ItemStatus.valueOf(result.getString("status")),
                 List.copyOf(tags),
-                UtcTimestamps.parse(result.getString("created_at")));
+                UtcTimestamps.parse(result.getString("created_at")), location);
     }
 }

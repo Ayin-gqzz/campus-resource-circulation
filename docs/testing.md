@@ -1,6 +1,8 @@
 # 测试计划
 
-数据层已由 JUnit 5 集成测试覆盖，服务层与 GUI 测试尚未编写。Maven 已配置 JUnit 5 和 Surefire，GitHub Actions 执行 `mvn clean verify`。
+Maven 使用 JUnit 5 和 Surefire，GitHub Actions 执行 `mvn clean verify`。数据层由仓储集成测试覆盖。Demo 集成测试走同一套 JDBC 仓储，覆盖发布、意向、交接、互评、权限校验、取消后重新流转及重开数据库后的持久化。
+
+交易地点测试覆盖发布必填、流转记录中的地点留存，以及版本 1 演示库升级后由发布人补填地点并继续交易。
 
 | 层次 | 后续重点 |
 | --- | --- |
@@ -25,8 +27,8 @@
 
 ### 初始化、连接与事务（UserAndCategoryRepositoryTest）
 
-- 从 classpath 载入脚本，`user_version = 1`、8 张表；重复 `initialize()` 与新建 `DatabaseManager` 重新初始化都幂等，已有数据保留。
-- `user_version` 为 2 或 99 时抛出 `DataAccessException`，版本值不被改写。
+- 从 classpath 载入脚本，`user_version = 2`、9 张表。重复初始化时保留已有数据。
+- `user_version` 为 3 或 99 时抛出 `DataAccessException`，版本值不被改写。
 - 库中已存在同名 `categories` 表导致建表中途失败时整体回滚，`user_version` 仍为 0 且没有 `users` 表。
 - 普通连接与事务连接都满足 `PRAGMA foreign_keys = 1`、`PRAGMA busy_timeout = 5000`，外键违例抛 `ForeignKeyException`。
 - `inWriteTransaction` 在执行工作前已取得写锁：另一连接关闭 busy_timeout 后写入返回错误码 5。
@@ -69,7 +71,7 @@
 | R07 管理 | 分类启用过滤与历史系数保留、账号停用后物品从检索隐藏；停用连带取消意向由服务层组合仓储方法完成 |
 | R08 质量 | 多表写操作在同一事务提交、失败整体回滚、SQL 异常按唯一 / 外键 / 其他分类 |
 
-跨表权限规则（禁止对本人物品提交意向、留言人和评价人须为参与者、评价仅限已完成流转）属于服务层职责，数据层只保证外键、唯一索引和字段约束，相关用例在服务层实现后补充。
+跨表权限规则由服务层校验。Demo 集成测试已覆盖禁止对本人发布的物品提交意向、请求方不能接受意向、禁止提前及重复评价。正式账号、后续留言与管理权限留待对应业务服务实现时补测。
 
 ## 测试记录模板
 
