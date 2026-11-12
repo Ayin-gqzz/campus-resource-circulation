@@ -2,6 +2,8 @@ package edu.campus.circulation.repository;
 
 import edu.campus.circulation.domain.ItemCondition;
 import edu.campus.circulation.domain.ItemDraft;
+import edu.campus.circulation.domain.MeetupLocation;
+import edu.campus.circulation.domain.MeetupLocation.Campus;
 import edu.campus.circulation.domain.Role;
 import edu.campus.circulation.domain.TradeType;
 import edu.campus.circulation.domain.User;
@@ -45,12 +47,15 @@ public final class DemoDatabase {
             long books = categories.insert("教材文具", true, null, null);
             long electronics = categories.insert("数码配件", true, null, null);
             long household = categories.insert("生活用品", true, null, null);
-            items.insert(linId, new ItemDraft(books, "高等数学教材", "封面完好，内页有少量课堂笔记。",
+            long book = items.insert(linId, new ItemDraft(books, "高等数学教材", "封面完好，内页有少量课堂笔记。",
                     ItemCondition.GOOD, TradeType.SALE, 1500L, null, List.of()), now);
-            items.insert(linId, new ItemDraft(electronics, "USB 台灯", "适合宿舍书桌，亮度可调。",
+            long lamp = items.insert(linId, new ItemDraft(electronics, "USB 台灯", "适合宿舍书桌，亮度可调。",
                     ItemCondition.FAIR, TradeType.SWAP, null, "交换一个文件收纳盒", List.of()), now);
-            items.insert(chenId, new ItemDraft(household, "不锈钢保温杯", "未使用，容量 500 mL。",
+            long bottle = items.insert(chenId, new ItemDraft(household, "不锈钢保温杯", "未使用，容量 500 mL。",
                     ItemCondition.NEW, TradeType.SALE, 2000L, null, List.of()), now);
+            items.setInitialMeetupLocation(book, new MeetupLocation(Campus.GUIZISHAN, "图书馆入口（示例）"));
+            items.setInitialMeetupLocation(lamp, new MeetupLocation(Campus.NANHU, "校门口（示例）"));
+            items.setInitialMeetupLocation(bottle, new MeetupLocation(Campus.NANHU, "教学楼入口（示例）"));
         });
         return manager;
     }

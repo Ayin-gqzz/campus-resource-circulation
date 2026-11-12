@@ -2,6 +2,8 @@
 
 Maven 使用 JUnit 5 和 Surefire，GitHub Actions 执行 `mvn clean verify`。数据层由仓储集成测试覆盖。Demo 集成测试走同一套 JDBC 仓储，覆盖发布、意向、交接、互评、权限校验、取消后重新流转及重开数据库后的持久化。
 
+交易地点测试覆盖发布必填、流转记录中的地点留存，以及版本 1 演示库升级后由发布人补填地点并继续交易。
+
 | 层次 | 后续重点 |
 | --- | --- |
 | 单元测试 | 非法输入、角色与所有权、物品筛选、状态变更、互评限制、信用与减排算法、CSV 转义 |
@@ -25,8 +27,8 @@ Maven 使用 JUnit 5 和 Surefire，GitHub Actions 执行 `mvn clean verify`。�
 
 ### 初始化、连接与事务（UserAndCategoryRepositoryTest）
 
-- 从 classpath 载入脚本，`user_version = 1`、8 张表；重复 `initialize()` 与新建 `DatabaseManager` 重新初始化都幂等，已有数据保留。
-- `user_version` 为 2 或 99 时抛出 `DataAccessException`，版本值不被改写。
+- 从 classpath 载入脚本，`user_version = 2`、9 张表。重复初始化时保留已有数据。
+- `user_version` 为 3 或 99 时抛出 `DataAccessException`，版本值不被改写。
 - 库中已存在同名 `categories` 表导致建表中途失败时整体回滚，`user_version` 仍为 0 且没有 `users` 表。
 - 普通连接与事务连接都满足 `PRAGMA foreign_keys = 1`、`PRAGMA busy_timeout = 5000`，外键违例抛 `ForeignKeyException`。
 - `inWriteTransaction` 在执行工作前已取得写锁：另一连接关闭 busy_timeout 后写入返回错误码 5。

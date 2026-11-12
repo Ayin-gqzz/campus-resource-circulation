@@ -1,5 +1,7 @@
 package edu.campus.circulation.ui;
 
+import edu.campus.circulation.domain.MeetupLocation;
+import edu.campus.circulation.domain.MeetupLocation.Campus;
 import edu.campus.circulation.service.DemoService;
 import edu.campus.circulation.service.DemoService.Action;
 import edu.campus.circulation.service.DemoService.Category;
@@ -56,12 +58,14 @@ public final class DemoWindow extends JFrame {
     private final JLabel status = new JLabel("正在读取演示数据…");
     private final JTextArea itemDetails = detailArea();
     private final JTextArea exchangeDetails = detailArea();
-    private final DefaultTableModel marketModel = model("物品", "分类", "成色", "流转条件", "发布人");
-    private final DefaultTableModel historyModel = model("物品", "我的角色", "对方", "状态", "我的评价");
+    private final DefaultTableModel marketModel = model("物品", "分类", "成色", "流转条件", "发布人", "交易地点");
+    private final DefaultTableModel historyModel = model("物品", "我的角色", "对方", "状态", "我的评价", "交易地点");
     private final JTable marketTable = table(marketModel);
     private final JTable historyTable = table(historyModel);
     private final JButton request = new JButton("发起意向");
     private final JButton publish = new JButton("发布物品");
+    private final JButton fillMarketLocation = new JButton("补填交易地点");
+    private final JButton fillHistoryLocation = new JButton("补填交易地点");
     private final JButton accept = new JButton("接受");
     private final JButton reject = new JButton("拒绝");
     private final JButton complete = new JButton("确认交接完成");
@@ -113,7 +117,7 @@ public final class DemoWindow extends JFrame {
         JPanel panel = new JPanel(new BorderLayout(18, 0));
         panel.setBackground(PALE);
         panel.setBorder(BorderFactory.createEmptyBorder(18, 22, 16, 22));
-        JLabel title = new JLabel("校园循环");
+        JLabel title = new JLabel("华中师范大学 · 校园循环");
         title.setForeground(INK);
         title.setFont(title.getFont().deriveFont(Font.BOLD, 28f));
         JLabel caption = new JLabel("校园闲置流转演示 · 浏览、发布、交接和互评");
@@ -138,8 +142,9 @@ public final class DemoWindow extends JFrame {
         keyword.addActionListener(event -> refresh());
         publish.addActionListener(event -> publishItem());
         request.addActionListener(event -> requestItem());
+        fillMarketLocation.addActionListener(event -> fillLocation(selected(marketTable, items).id()));
         JPanel tools = bar(new JLabel("关键词"), keyword, categoryFilter, search);
-        JPanel actions = bar(request, publish);
+        JPanel actions = bar(request, publish, fillMarketLocation);
         return view(tools, marketTable, itemDetails, actions);
     }
 
@@ -151,8 +156,9 @@ public final class DemoWindow extends JFrame {
         complete.addActionListener(event -> transition(Action.COMPLETE));
         cancel.addActionListener(event -> transition(Action.CANCEL));
         review.addActionListener(event -> reviewPeer());
+        fillHistoryLocation.addActionListener(event -> fillLocation(selected(historyTable, exchanges).itemId()));
         return view(bar(reload, new JLabel("切换演示身份可查看另一方的记录")),
-                historyTable, exchangeDetails, bar(accept, reject, complete, cancel, review));
+                historyTable, exchangeDetails, bar(accept, reject, complete, cancel, review, fillHistoryLocation));
     }
 
     private static JPanel view(JPanel tools, JTable table, JTextArea details, JPanel actions) {
@@ -181,7 +187,7 @@ public final class DemoWindow extends JFrame {
             exchanges = snapshot.exchanges();
             for (Item item : items) {
                 marketModel.addRow(new Object[]{item.title(), item.category(), item.condition(), terms(item),
-                    Profile.nameOf(item.ownerId())});
+                    Profile.nameOf(item.ownerId()), locationText(item.location())});
                 if (previousItem != null && previousItem.id() == item.id()) {
                     int row = marketModel.getRowCount() - 1;
                     marketTable.setRowSelectionInterval(row, row);
@@ -191,7 +197,7 @@ public final class DemoWindow extends JFrame {
                 boolean owner = exchange.ownerId() == profile.id();
                 historyModel.addRow(new Object[]{exchange.itemTitle(), owner ? "发布人" : "请求人",
                     Profile.nameOf(owner ? exchange.requesterId() : exchange.ownerId()), exchange.status(),
-                    exchange.stars() == null ? "—" : exchange.stars() + " 星"});
+                    exchange.stars() == null ? "—" : exchange.stars() + " 星", historyLocationText(exchange)});
                 if (previousExchange != null && previousExchange.id() == exchange.id()) {
                     int row = historyModel.getRowCount() - 1;
                     historyTable.setRowSelectionInterval(row, row);
@@ -210,17 +216,22 @@ public final class DemoWindow extends JFrame {
         Item item = selected(marketTable, items);
         Exchange exchange = selected(historyTable, exchanges);
         itemDetails.setText(item == null ? "选中一件物品，查看详情和流转条件。"
-                : item.title() + " · " + terms(item) + "\n" + item.description());
+                : item.title() + " · " + terms(item) + "\n交易地点：" + locationText(item.location())
+                    + "\n" + item.description());
         exchangeDetails.setText(exchange == null ? "选中一条记录，查看首条意向留言。"
-                : exchange.itemTitle() + " · " + exchange.status() + "\n"
+                : exchange.itemTitle() + " · " + exchange.status() + "\n交易地点：" + historyLocationText(exchange) + "\n"
                     + (exchange.message() == null ? "" : exchange.message()));
-        request.setEnabled(!busy && item != null && item.ownerId() != profile.id());
+        request.setEnabled(!busy && item != null && item.ownerId() != profile.id() && item.location() != null);
+        fillMarketLocation.setEnabled(!busy && item != null && item.ownerId() == profile.id() && item.location() == null);
         publish.setEnabled(!busy && !categories.isEmpty());
         boolean owner = exchange != null && exchange.ownerId() == profile.id();
         Status state = exchange == null ? null : exchange.status();
-        accept.setEnabled(!busy && owner && state == Status.PENDING);
-        reject.setEnabled(accept.isEnabled());
-        complete.setEnabled(!busy && owner && state == Status.ACCEPTED);
+        boolean hasLocation = exchange != null && exchange.location() != null;
+        accept.setEnabled(!busy && owner && state == Status.PENDING && hasLocation);
+        reject.setEnabled(!busy && owner && state == Status.PENDING);
+        complete.setEnabled(!busy && owner && state == Status.ACCEPTED && hasLocation);
+        fillHistoryLocation.setEnabled(!busy && owner && !hasLocation
+                && (state == Status.PENDING || state == Status.ACCEPTED));
         cancel.setEnabled(!busy && (state == Status.ACCEPTED || (!owner && state == Status.PENDING)));
         review.setEnabled(!busy && state == Status.COMPLETED && exchange.stars() == null);
     }
@@ -233,11 +244,12 @@ public final class DemoWindow extends JFrame {
         JComboBox<Condition> condition = new JComboBox<>(Condition.values());
         JComboBox<TradeType> type = new JComboBox<>(TradeType.values());
         JTextField terms = new JTextField(24);
+        MeetupFields meetup = new MeetupFields();
         JLabel termsLabel = new JLabel("售价（元）");
         type.addActionListener(event -> termsLabel.setText(
                 type.getSelectedItem() == TradeType.SALE ? "售价（元）" : "期望换物"));
         Object[] form = {"物品名称", name, "物品描述", new JScrollPane(description),
-            "分类", category, "成色", condition, "流转方式", type, termsLabel, terms};
+            "分类", category, "成色", condition, "流转方式", type, termsLabel, terms, meetup.panel()};
         while (confirm(form, "发布闲置物品")) {
             TradeType tradeType = (TradeType) type.getSelectedItem();
             Long cents = null;
@@ -261,9 +273,16 @@ public final class DemoWindow extends JFrame {
                 showError("请填写物品名称、描述和流转条件。");
                 continue;
             }
+            MeetupLocation location;
+            try {
+                location = meetup.value();
+            } catch (IllegalArgumentException invalid) {
+                showError(invalid.getMessage());
+                continue;
+            }
             Profile actor = profile();
             Draft draft = new Draft(((Category) category.getSelectedItem()).id(), name.getText(),
-                    description.getText(), (Condition) condition.getSelectedItem(), tradeType, cents, terms.getText());
+                    description.getText(), (Condition) condition.getSelectedItem(), tradeType, cents, terms.getText(), location);
             runTask(() -> {
                 service.publish(actor, draft);
                 return null;
@@ -283,7 +302,8 @@ public final class DemoWindow extends JFrame {
         }
         JTextArea message = new JTextArea("你好，这件物品还在吗？", 4, 28);
         message.setLineWrap(true);
-        if (confirm(new Object[]{item.title(), "留言给发布人", new JScrollPane(message)}, "发起意向")) {
+        if (confirm(new Object[]{item.title(), "交易地点：" + locationText(item.location()),
+                "留言给发布人", new JScrollPane(message)}, "发起意向")) {
             Profile actor = profile();
             runTask(() -> {
                 service.request(actor, item.id(), message.getText());
@@ -300,7 +320,8 @@ public final class DemoWindow extends JFrame {
         if (exchange == null) {
             return;
         }
-        if (action == Action.COMPLETE && !confirm("确认双方已在线下完成交接？", "确认交接")) {
+        if (action == Action.COMPLETE && !confirm(new Object[]{"确认双方已在线下完成交接？",
+                "交易地点：" + locationText(exchange.location())}, "确认交接")) {
             return;
         }
         Profile actor = profile();
@@ -308,6 +329,25 @@ public final class DemoWindow extends JFrame {
             service.transition(actor, exchange.id(), action);
             return null;
         }, ignored -> refresh());
+    }
+
+    private void fillLocation(long itemId) {
+        MeetupFields meetup = new MeetupFields();
+        while (confirm(meetup.panel(), "补填交易地点")) {
+            MeetupLocation location;
+            try {
+                location = meetup.value();
+            } catch (IllegalArgumentException invalid) {
+                showError(invalid.getMessage());
+                continue;
+            }
+            Profile actor = profile();
+            runTask(() -> {
+                service.fillMeetupLocation(actor, itemId, location);
+                return null;
+            }, ignored -> refresh());
+            return;
+        }
     }
 
     private void reviewPeer() {
@@ -395,6 +435,39 @@ public final class DemoWindow extends JFrame {
                 : "换物 · " + item.swapNote();
     }
 
+    private static String locationText(MeetupLocation location) {
+        return location == null ? "待发布人补填" : location.displayName();
+    }
+
+    private static String historyLocationText(Exchange exchange) {
+        if (exchange.location() == null && exchange.status() != Status.PENDING && exchange.status() != Status.ACCEPTED) {
+            return "未记录（旧记录）";
+        }
+        return locationText(exchange.location());
+    }
+
+    private static final class MeetupFields {
+        private final JComboBox<Campus> campus = new JComboBox<>(Campus.values());
+        private final JTextField place = new JTextField(24);
+        private final JPanel panel = new JPanel(new GridLayout(0, 1, 0, 4));
+
+        private MeetupFields() {
+            campus.setSelectedIndex(-1);
+            panel.add(new JLabel("交易校区（必选）"));
+            panel.add(campus);
+            panel.add(new JLabel("具体交易地点（如图书馆入口，必填）"));
+            panel.add(place);
+        }
+
+        private JPanel panel() {
+            return panel;
+        }
+
+        private MeetupLocation value() {
+            return new MeetupLocation((Campus) campus.getSelectedItem(), place.getText());
+        }
+    }
+
     private static DefaultTableModel model(String... columns) {
         return new DefaultTableModel(columns, 0) {
             @Override
@@ -412,6 +485,7 @@ public final class DemoWindow extends JFrame {
         table.getTableHeader().setReorderingAllowed(false);
         table.getColumnModel().getColumn(0).setPreferredWidth(190);
         table.getColumnModel().getColumn(3).setPreferredWidth(220);
+        table.getColumnModel().getColumn(5).setPreferredWidth(235);
         return table;
     }
 

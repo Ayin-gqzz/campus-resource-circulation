@@ -74,6 +74,11 @@ classDiagram
     User "1" --> "0..*" Item : publishes
     Category "1" --> "0..*" Item : classifies
     Item "1" --> "0..*" Exchange
+    Item "1" *-- "0..1" MeetupLocation
+    class MeetupLocation {
+        +Campus campus
+        +String place
+    }
     User "1" --> "0..*" Exchange : requests
     Exchange "1" *-- "1..*" ExchangeMessage
     User "1" --> "0..*" ExchangeMessage : sends

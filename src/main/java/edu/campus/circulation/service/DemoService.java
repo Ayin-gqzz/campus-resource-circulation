@@ -5,6 +5,7 @@ import edu.campus.circulation.domain.ItemCondition;
 import edu.campus.circulation.domain.ItemDraft;
 import edu.campus.circulation.domain.ItemSearchFilter;
 import edu.campus.circulation.domain.ItemStatus;
+import edu.campus.circulation.domain.MeetupLocation;
 import edu.campus.circulation.domain.Review;
 import edu.campus.circulation.domain.User;
 import edu.campus.circulation.repository.CategoryRepository;
@@ -53,13 +54,14 @@ public final class DemoService {
                 .map(item -> new Item(item.id(), item.ownerId(), item.title(), item.description(),
                         names.get(item.categoryId()), Condition.valueOf(item.condition().name()),
                         TradeType.valueOf(item.tradeType().name()), item.priceCents() == null ? 0 : item.priceCents(),
-                        item.swapNote()))
+                        item.swapNote(), item.meetupLocation()))
                 .toList();
     }
 
     public void publish(Profile owner, Draft draft) {
         String title = required(draft.title(), 80, "物品名称");
         String description = required(draft.description(), 1000, "物品描述");
+        require(draft.location() != null, "请填写交易校区和具体地点。");
         Long price = draft.type() == TradeType.SALE ? draft.priceCents() : null;
         String swap = draft.type() == TradeType.SWAP ? required(draft.swapNote(), 200, "换物说明") : null;
         require(draft.type() != TradeType.SALE || (price != null && price > 0), "请输入大于零的售价。");
@@ -70,7 +72,18 @@ public final class DemoService {
             active(owner);
             require(categories.findById(draft.categoryId()).filter(category -> category.enabled()).isPresent(),
                     "该分类不可用。");
-            items.insert(owner.id(), itemDraft, Instant.now());
+            long itemId = items.insert(owner.id(), itemDraft, Instant.now());
+            require(items.setInitialMeetupLocation(itemId, draft.location()), "无法保存交易地点。");
+        });
+    }
+
+    public void fillMeetupLocation(Profile owner, long itemId, MeetupLocation location) {
+        database.inWriteTransaction(() -> {
+            active(owner);
+            var item = items.findById(itemId)
+                    .filter(value -> value.ownerId() == owner.id())
+                    .orElseThrow(() -> new IllegalArgumentException("只有发布人可以补填交易地点。"));
+            require(items.setInitialMeetupLocation(item.id(), location), "当前物品无法补填交易地点，请刷新。");
         });
     }
 
@@ -83,6 +96,7 @@ public final class DemoService {
                     .orElseThrow(() -> new IllegalArgumentException("物品已不在架，请刷新列表。"));
             require(users.findById(item.ownerId()).filter(User::enabled).isPresent(), "物品已不在架，请刷新列表。");
             require(item.ownerId() != actor.id(), "不能对自己发布的物品发起意向。");
+            require(item.meetupLocation() != null, "请等发布人补填交易地点后再发起意向。");
             try {
                 exchanges.insertWithFirstMessage(itemId, actor.id(), body, Instant.now());
             } catch (UniqueConstraintException duplicate) {
@@ -99,8 +113,8 @@ public final class DemoService {
             Integer stars = reviews.findByExchange(exchange.id()).stream()
                     .filter(review -> review.reviewerId() == actor.id())
                     .findFirst().map(Review::stars).orElse(null);
-            return new Exchange(exchange.id(), item.title(), item.ownerId(), exchange.requesterId(),
-                    Status.valueOf(exchange.status().name()), firstMessage, stars);
+            return new Exchange(exchange.id(), item.id(), item.title(), item.ownerId(), exchange.requesterId(),
+                    Status.valueOf(exchange.status().name()), firstMessage, stars, item.meetupLocation());
         }).toList();
     }
 
@@ -112,12 +126,14 @@ public final class DemoService {
             switch (action) {
                 case ACCEPT -> {
                     require(owner && trade.status() == ExchangeStatus.PENDING, "只有发布人可以接受待处理意向。");
+                    require(trade.location() != null, "请先补填交易地点。");
                     moveItem(trade.item(), ItemStatus.AVAILABLE, ItemStatus.RESERVED);
                     moveExchange(exchangeId, trade.status(), ExchangeStatus.ACCEPTED);
                     exchanges.rejectOtherPendingByItem(trade.item(), exchangeId);
                 }
                 case COMPLETE -> {
                     require(owner && trade.status() == ExchangeStatus.ACCEPTED, "只有发布人可以确认已接受的流转。");
+                    require(trade.location() != null, "请先补填交易地点。");
                     moveItem(trade.item(), ItemStatus.RESERVED, ItemStatus.COMPLETED);
                     moveExchange(exchangeId, trade.status(), ExchangeStatus.COMPLETED);
                 }
@@ -164,7 +180,7 @@ public final class DemoService {
                 .orElseThrow(() -> new IllegalArgumentException("记录不存在或你无权操作。"));
         var item = items.findById(exchange.itemId()).orElseThrow();
         require(item.ownerId() == actor.id() || exchange.requesterId() == actor.id(), "记录不存在或你无权操作。");
-        return new Trade(item.id(), item.ownerId(), exchange.requesterId(), exchange.status());
+        return new Trade(item.id(), item.ownerId(), exchange.requesterId(), exchange.status(), item.meetupLocation());
     }
 
     private void active(Profile actor) {
@@ -193,7 +209,7 @@ public final class DemoService {
         }
     }
 
-    private record Trade(long item, long owner, long requester, ExchangeStatus status) {}
+    private record Trade(long item, long owner, long requester, ExchangeStatus status, MeetupLocation location) {}
 
     public enum Profile {
         LIN(1, "林同学"), CHEN(2, "陈同学");
@@ -282,13 +298,13 @@ public final class DemoService {
     }
 
     public record Draft(long categoryId, String title, String description, Condition condition,
-            TradeType type, Long priceCents, String swapNote) {}
+            TradeType type, Long priceCents, String swapNote, MeetupLocation location) {}
 
     public record Item(long id, long ownerId, String title, String description, String category,
-            Condition condition, TradeType type, long priceCents, String swapNote) {}
+            Condition condition, TradeType type, long priceCents, String swapNote, MeetupLocation location) {}
 
-    public record Exchange(long id, String itemTitle, long ownerId, long requesterId, Status status,
-            String message, Integer stars) {}
+    public record Exchange(long id, long itemId, String itemTitle, long ownerId, long requesterId, Status status,
+            String message, Integer stars, MeetupLocation location) {}
 
     public record Credit(int count, double average) {}
 
