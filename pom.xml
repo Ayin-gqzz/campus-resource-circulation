@@ -39,7 +39,9 @@
             <resource>
                 <directory>database</directory>
                 <targetPath>database</targetPath>
-                <includes><include>001_initial.sql</include></includes>
+                <includes>
+                    <include>001_initial.sql</include>
+                </includes>
             </resource>
         </resources>
         <plugins>

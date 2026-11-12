@@ -1,12 +1,12 @@
 package edu.campus.circulation;
 
+import edu.campus.circulation.repository.DataAccessException;
 import edu.campus.circulation.repository.DemoDatabase;
 import edu.campus.circulation.service.DemoService;
 import edu.campus.circulation.ui.DemoWindow;
 import java.awt.GraphicsEnvironment;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.sql.SQLException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JOptionPane;
@@ -25,9 +25,9 @@ public final class App {
         }
         Path file = Path.of(System.getProperty("campus.demo.db", "data/demo.db")).toAbsolutePath();
         try {
-            DemoService service = new DemoService(new DemoDatabase(file));
+            DemoService service = new DemoService(DemoDatabase.open(file));
             SwingUtilities.invokeLater(() -> new DemoWindow(service, file).setVisible(true));
-        } catch (IOException | SQLException failure) {
+        } catch (IOException | DataAccessException failure) {
             LOGGER.log(Level.SEVERE, "演示数据库初始化失败", failure);
             SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null,
                     "无法打开演示数据库。请检查文件权限和数据库版本。\n" + file,

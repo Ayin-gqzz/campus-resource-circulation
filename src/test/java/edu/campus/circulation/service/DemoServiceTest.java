@@ -66,6 +66,6 @@ class DemoServiceTest {
     }
 
     private static DemoService open(Path file) throws Exception {
-        return new DemoService(new DemoDatabase(file));
+        return new DemoService(DemoDatabase.open(file));
     }
 }

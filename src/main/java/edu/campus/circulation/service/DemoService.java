@@ -1,187 +1,183 @@
 package edu.campus.circulation.service;
 
-import static edu.campus.circulation.repository.DemoDatabase.now;
-import static edu.campus.circulation.repository.DemoDatabase.query;
-import static edu.campus.circulation.repository.DemoDatabase.update;
-
-import edu.campus.circulation.repository.DemoDatabase;
-import java.sql.Connection;
-import java.sql.SQLException;
+import edu.campus.circulation.domain.ExchangeStatus;
+import edu.campus.circulation.domain.ItemCondition;
+import edu.campus.circulation.domain.ItemDraft;
+import edu.campus.circulation.domain.ItemSearchFilter;
+import edu.campus.circulation.domain.ItemStatus;
+import edu.campus.circulation.domain.Review;
+import edu.campus.circulation.domain.User;
+import edu.campus.circulation.repository.CategoryRepository;
+import edu.campus.circulation.repository.DatabaseManager;
+import edu.campus.circulation.repository.ExchangeRepository;
+import edu.campus.circulation.repository.ItemRepository;
+import edu.campus.circulation.repository.JdbcCategoryRepository;
+import edu.campus.circulation.repository.JdbcExchangeRepository;
+import edu.campus.circulation.repository.JdbcItemRepository;
+import edu.campus.circulation.repository.JdbcReviewRepository;
+import edu.campus.circulation.repository.JdbcUserRepository;
+import edu.campus.circulation.repository.ReviewRepository;
+import edu.campus.circulation.repository.UniqueConstraintException;
+import edu.campus.circulation.repository.UserRepository;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public final class DemoService {
-    private final DemoDatabase database;
+    private final DatabaseManager database;
+    private final CategoryRepository categories;
+    private final ItemRepository items;
+    private final UserRepository users;
+    private final ExchangeRepository exchanges;
+    private final ReviewRepository reviews;
 
-    public DemoService(DemoDatabase database) {
+    public DemoService(DatabaseManager database) {
         this.database = database;
+        categories = new JdbcCategoryRepository(database);
+        items = new JdbcItemRepository(database);
+        users = new JdbcUserRepository(database);
+        exchanges = new JdbcExchangeRepository(database);
+        reviews = new JdbcReviewRepository(database);
     }
 
-    public List<Category> categories() throws SQLException {
-        return database.read(connection -> query(connection,
-                "SELECT id, name FROM categories WHERE enabled = 1 ORDER BY id",
-                row -> new Category(row.getLong("id"), row.getString("name"))));
+    public List<Category> categories() {
+        return categories.findAll(true).stream()
+                .map(category -> new Category(category.id(), category.name())).toList();
     }
 
-    public List<Item> market(String keyword, Long categoryId) throws SQLException {
-        return database.read(connection -> query(connection, """
-                SELECT i.id, i.owner_id, i.title, i.description, c.name, i.condition,
-                       i.trade_type, i.price_cents, i.swap_note
-                FROM items i JOIN categories c ON c.id = i.category_id
-                JOIN users u ON u.id = i.owner_id
-                WHERE i.status = 'AVAILABLE' AND u.enabled = 1
-                  AND (? IS NULL OR i.category_id = ?)
-                  AND (instr(lower(i.title), lower(?)) > 0 OR instr(lower(i.description), lower(?)) > 0
-                       OR ? = '')
-                ORDER BY i.id DESC
-                """, row -> new Item(row.getLong("id"), row.getLong("owner_id"), row.getString("title"),
-                row.getString("description"), row.getString("name"), Condition.valueOf(row.getString("condition")),
-                TradeType.valueOf(row.getString("trade_type")), row.getLong("price_cents"),
-                row.getString("swap_note")), categoryId, categoryId, keyword.strip(), keyword.strip(), keyword.strip()));
+    public List<Item> market(String keyword, Long categoryId) {
+        Map<Long, String> names = categories.findAll(false).stream().collect(Collectors.toMap(
+                edu.campus.circulation.domain.Category::id, edu.campus.circulation.domain.Category::name));
+        return items.searchAvailable(new ItemSearchFilter(categoryId, keyword.strip(), null, null)).stream()
+                .map(item -> new Item(item.id(), item.ownerId(), item.title(), item.description(),
+                        names.get(item.categoryId()), Condition.valueOf(item.condition().name()),
+                        TradeType.valueOf(item.tradeType().name()), item.priceCents() == null ? 0 : item.priceCents(),
+                        item.swapNote()))
+                .toList();
     }
 
-    public void publish(Profile owner, Draft draft) throws SQLException {
+    public void publish(Profile owner, Draft draft) {
         String title = required(draft.title(), 80, "物品名称");
         String description = required(draft.description(), 1000, "物品描述");
         Long price = draft.type() == TradeType.SALE ? draft.priceCents() : null;
         String swap = draft.type() == TradeType.SWAP ? required(draft.swapNote(), 200, "换物说明") : null;
         require(draft.type() != TradeType.SALE || (price != null && price > 0), "请输入大于零的售价。");
-        database.write(connection -> {
-            active(connection, owner);
-            require(!query(connection, "SELECT id FROM categories WHERE id = ? AND enabled = 1",
-                    row -> row.getLong(1), draft.categoryId()).isEmpty(), "该分类不可用。");
-            update(connection, """
-                    INSERT INTO items (owner_id, category_id, title, description, condition,
-                                       trade_type, price_cents, swap_note, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, owner.id(), draft.categoryId(), title, description, draft.condition().name(),
-                    draft.type().name(), price, swap, now());
-            return null;
+        ItemDraft itemDraft = new ItemDraft(draft.categoryId(), title, description,
+                ItemCondition.valueOf(draft.condition().name()),
+                edu.campus.circulation.domain.TradeType.valueOf(draft.type().name()), price, swap, List.of());
+        database.inWriteTransaction(() -> {
+            active(owner);
+            require(categories.findById(draft.categoryId()).filter(category -> category.enabled()).isPresent(),
+                    "该分类不可用。");
+            items.insert(owner.id(), itemDraft, Instant.now());
         });
     }
 
-    public void request(Profile actor, long itemId, String message) throws SQLException {
+    public void request(Profile actor, long itemId, String message) {
         String body = required(message, 500, "留言");
-        database.write(connection -> {
-            active(connection, actor);
-            long owner = only(query(connection, """
-                    SELECT i.owner_id FROM items i JOIN users u ON u.id = i.owner_id
-                    WHERE i.id = ? AND i.status = 'AVAILABLE' AND u.enabled = 1
-                    """, row -> row.getLong(1), itemId), "物品已不在架，请刷新列表。");
-            require(owner != actor.id(), "不能对自己发布的物品发起意向。");
-            require(query(connection, """
-                    SELECT id FROM exchanges WHERE item_id = ? AND requester_id = ? AND status = 'PENDING'
-                    """, row -> row.getLong(1), itemId, actor.id()).isEmpty(), "你已经提交过待处理意向。");
-            String timestamp = now();
-            long exchangeId = query(connection, """
-                    INSERT INTO exchanges (item_id, requester_id, created_at) VALUES (?, ?, ?) RETURNING id
-                    """, row -> row.getLong(1), itemId, actor.id(), timestamp).get(0);
-            update(connection, "INSERT INTO exchange_messages (exchange_id, sender_id, body, sent_at) VALUES (?, ?, ?, ?)",
-                    exchangeId, actor.id(), body, timestamp);
-            return null;
+        database.inWriteTransaction(() -> {
+            active(actor);
+            var item = items.findById(itemId)
+                    .filter(value -> value.status() == ItemStatus.AVAILABLE)
+                    .orElseThrow(() -> new IllegalArgumentException("物品已不在架，请刷新列表。"));
+            require(users.findById(item.ownerId()).filter(User::enabled).isPresent(), "物品已不在架，请刷新列表。");
+            require(item.ownerId() != actor.id(), "不能对自己发布的物品发起意向。");
+            try {
+                exchanges.insertWithFirstMessage(itemId, actor.id(), body, Instant.now());
+            } catch (UniqueConstraintException duplicate) {
+                throw new IllegalArgumentException("你已经提交过待处理意向。", duplicate);
+            }
         });
     }
 
-    public List<Exchange> history(Profile actor) throws SQLException {
-        return database.read(connection -> query(connection, """
-                SELECT e.id, i.title, i.owner_id, e.requester_id, e.status, r.stars,
-                       (SELECT m.body FROM exchange_messages m WHERE m.exchange_id = e.id ORDER BY m.id LIMIT 1) message
-                FROM exchanges e JOIN items i ON i.id = e.item_id
-                LEFT JOIN reviews r ON r.exchange_id = e.id AND r.reviewer_id = ?
-                WHERE e.requester_id = ? OR i.owner_id = ?
-                ORDER BY e.id DESC
-                """, row -> {
-                    int rating = row.getInt("stars");
-                    Integer stars = row.wasNull() ? null : rating;
-                    return new Exchange(row.getLong("id"), row.getString("title"),
-                            row.getLong("owner_id"), row.getLong("requester_id"),
-                            Status.valueOf(row.getString("status")), row.getString("message"), stars);
-                },
-                actor.id(), actor.id(), actor.id()));
+    public List<Exchange> history(Profile actor) {
+        return exchanges.findByParticipant(actor.id()).stream().map(exchange -> {
+            var item = items.findById(exchange.itemId()).orElseThrow();
+            String firstMessage = exchanges.findMessages(exchange.id()).stream()
+                    .findFirst().map(message -> message.body()).orElse(null);
+            Integer stars = reviews.findByExchange(exchange.id()).stream()
+                    .filter(review -> review.reviewerId() == actor.id())
+                    .findFirst().map(Review::stars).orElse(null);
+            return new Exchange(exchange.id(), item.title(), item.ownerId(), exchange.requesterId(),
+                    Status.valueOf(exchange.status().name()), firstMessage, stars);
+        }).toList();
     }
 
-    public void transition(Profile actor, long exchangeId, Action action) throws SQLException {
-        database.write(connection -> {
-            active(connection, actor);
-            Trade trade = trade(connection, exchangeId, actor);
+    public void transition(Profile actor, long exchangeId, Action action) {
+        database.inWriteTransaction(() -> {
+            active(actor);
+            Trade trade = trade(exchangeId, actor);
             boolean owner = actor.id() == trade.owner();
             switch (action) {
                 case ACCEPT -> {
-                    require(owner && trade.status() == Status.PENDING, "只有发布人可以接受待处理意向。");
-                    moveItem(connection, trade.item(), "AVAILABLE", "RESERVED");
-                    moveExchange(connection, exchangeId, trade.status(), Status.ACCEPTED);
-                    update(connection, "UPDATE exchanges SET status = 'REJECTED' WHERE item_id = ? AND status = 'PENDING'",
-                            trade.item());
+                    require(owner && trade.status() == ExchangeStatus.PENDING, "只有发布人可以接受待处理意向。");
+                    moveItem(trade.item(), ItemStatus.AVAILABLE, ItemStatus.RESERVED);
+                    moveExchange(exchangeId, trade.status(), ExchangeStatus.ACCEPTED);
+                    exchanges.rejectOtherPendingByItem(trade.item(), exchangeId);
                 }
                 case COMPLETE -> {
-                    require(owner && trade.status() == Status.ACCEPTED, "只有发布人可以确认已接受的流转。");
-                    moveItem(connection, trade.item(), "RESERVED", "COMPLETED");
-                    moveExchange(connection, exchangeId, trade.status(), Status.COMPLETED);
+                    require(owner && trade.status() == ExchangeStatus.ACCEPTED, "只有发布人可以确认已接受的流转。");
+                    moveItem(trade.item(), ItemStatus.RESERVED, ItemStatus.COMPLETED);
+                    moveExchange(exchangeId, trade.status(), ExchangeStatus.COMPLETED);
                 }
                 case REJECT -> {
-                    require(owner && trade.status() == Status.PENDING, "只有发布人可以拒绝待处理意向。");
-                    moveExchange(connection, exchangeId, trade.status(), Status.REJECTED);
+                    require(owner && trade.status() == ExchangeStatus.PENDING, "只有发布人可以拒绝待处理意向。");
+                    moveExchange(exchangeId, trade.status(), ExchangeStatus.REJECTED);
                 }
                 case CANCEL -> {
-                    if (trade.status() == Status.ACCEPTED) {
-                        moveItem(connection, trade.item(), "RESERVED", "AVAILABLE");
+                    if (trade.status() == ExchangeStatus.ACCEPTED) {
+                        moveItem(trade.item(), ItemStatus.RESERVED, ItemStatus.AVAILABLE);
                     } else {
-                        require(!owner && trade.status() == Status.PENDING, "当前意向不能撤回。");
+                        require(!owner && trade.status() == ExchangeStatus.PENDING, "当前意向不能撤回。");
                     }
-                    moveExchange(connection, exchangeId, trade.status(), Status.CANCELLED);
+                    moveExchange(exchangeId, trade.status(), ExchangeStatus.CANCELLED);
                 }
             }
-            return null;
         });
     }
 
-    public void review(Profile actor, long exchangeId, int stars, String comment) throws SQLException {
+    public void review(Profile actor, long exchangeId, int stars, String comment) {
         require(stars >= 1 && stars <= 5, "星级须在 1 到 5 之间。");
         String text = comment.strip();
         require(text.codePointCount(0, text.length()) <= 500, "短评最多 500 字。");
-        database.write(connection -> {
-            active(connection, actor);
-            Trade trade = trade(connection, exchangeId, actor);
-            require(trade.status() == Status.COMPLETED, "完成流转后才可以评价。");
+        database.inWriteTransaction(() -> {
+            active(actor);
+            Trade trade = trade(exchangeId, actor);
+            require(trade.status() == ExchangeStatus.COMPLETED, "完成流转后才可以评价。");
             long peer = actor.id() == trade.owner() ? trade.requester() : trade.owner();
-            require(update(connection, """
-                    INSERT INTO reviews (exchange_id, reviewer_id, reviewee_id, stars, comment, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (exchange_id, reviewer_id) DO NOTHING
-                    """, exchangeId, actor.id(), peer, stars, text, now()) == 1, "你已评价过本次流转。");
-            return null;
+            try {
+                reviews.insert(new Review(exchangeId, actor.id(), peer, stars, text, Instant.now()));
+            } catch (UniqueConstraintException duplicate) {
+                throw new IllegalArgumentException("你已评价过本次流转。", duplicate);
+            }
         });
     }
 
-    public Credit credit(Profile actor) throws SQLException {
-        return database.read(connection -> query(connection, """
-                SELECT count(*), avg(stars) FROM reviews WHERE reviewee_id = ?
-                """, row -> new Credit(row.getInt(1), row.getDouble(2)), actor.id()).get(0));
+    public Credit credit(Profile actor) {
+        var summary = reviews.getCreditSummary(actor.id());
+        return new Credit(summary.reviewCount(), summary.averageStars() == null ? 0 : summary.averageStars());
     }
 
-    private static Trade trade(Connection connection, long exchangeId, Profile actor) throws SQLException {
-        return only(query(connection, """
-                SELECT i.id, i.owner_id, e.requester_id, e.status
-                FROM exchanges e JOIN items i ON i.id = e.item_id
-                WHERE e.id = ? AND (i.owner_id = ? OR e.requester_id = ?)
-                """, row -> new Trade(row.getLong(1), row.getLong(2), row.getLong(3), Status.valueOf(row.getString(4))),
-                exchangeId, actor.id(), actor.id()), "记录不存在或你无权操作。");
+    private Trade trade(long exchangeId, Profile actor) {
+        var exchange = exchanges.findById(exchangeId)
+                .orElseThrow(() -> new IllegalArgumentException("记录不存在或你无权操作。"));
+        var item = items.findById(exchange.itemId()).orElseThrow();
+        require(item.ownerId() == actor.id() || exchange.requesterId() == actor.id(), "记录不存在或你无权操作。");
+        return new Trade(item.id(), item.ownerId(), exchange.requesterId(), exchange.status());
     }
 
-    private static void active(Connection connection, Profile actor) throws SQLException {
-        require(!query(connection, "SELECT id FROM users WHERE id = ? AND enabled = 1",
-                row -> row.getLong(1), actor.id()).isEmpty(), "当前演示身份不可用。");
+    private void active(Profile actor) {
+        require(users.findById(actor.id()).filter(User::enabled).isPresent(), "当前演示身份不可用。");
     }
 
-    private static void moveItem(Connection connection, long itemId, String previous, String next)
-            throws SQLException {
-        require(update(connection, "UPDATE items SET status = ? WHERE id = ? AND status = ?",
-                next, itemId, previous) == 1, "物品状态已变化，请刷新。");
+    private void moveItem(long itemId, ItemStatus previous, ItemStatus next) {
+        require(items.updateStatus(itemId, previous, next), "物品状态已变化，请刷新。");
     }
 
-    private static void moveExchange(Connection connection, long id, Status previous, Status next)
-            throws SQLException {
-        require(update(connection, "UPDATE exchanges SET status = ?, completed_at = ? WHERE id = ? AND status = ?",
-                next.name(), next == Status.COMPLETED ? now() : null, id, previous.name()) == 1,
-                "意向状态已变化，请刷新。");
+    private void moveExchange(long id, ExchangeStatus previous, ExchangeStatus next) {
+        Instant completedAt = next == ExchangeStatus.COMPLETED ? Instant.now() : null;
+        require(exchanges.transitionStatus(id, previous, next, completedAt), "意向状态已变化，请刷新。");
     }
 
     private static String required(String value, int max, String field) {
@@ -191,16 +187,13 @@ public final class DemoService {
         return text;
     }
 
-    private static <T> T only(List<T> rows, String message) {
-        require(!rows.isEmpty(), message);
-        return rows.get(0);
-    }
-
     private static void require(boolean condition, String message) {
         if (!condition) {
             throw new IllegalArgumentException(message);
         }
     }
+
+    private record Trade(long item, long owner, long requester, ExchangeStatus status) {}
 
     public enum Profile {
         LIN(1, "林同学"), CHEN(2, "陈同学");
@@ -299,5 +292,4 @@ public final class DemoService {
 
     public record Credit(int count, double average) {}
 
-    private record Trade(long item, long owner, long requester, Status status) {}
 }
