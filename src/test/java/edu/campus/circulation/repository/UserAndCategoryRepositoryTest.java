@@ -47,8 +47,8 @@ class UserAndCategoryRepositoryTest {
     void initializesSchemaFromClasspathAndIsIdempotent() {
         assertNotNull(DatabaseManager.class.getResource("/database/001_initial.sql"));
         assertNotNull(DatabaseManager.class.getResource("/database/002_meetup_locations.sql"));
-        assertEquals(2, scalar("PRAGMA user_version"));
-        assertEquals(9, scalar("SELECT count(*) FROM sqlite_master WHERE type = 'table'"));
+        assertEquals(6, scalar("PRAGMA user_version"));
+        assertEquals(12, scalar("SELECT count(*) FROM sqlite_master WHERE type = 'table'"));
         long id = users.insert("student", "hash", Role.STUDENT, true, NOW);
         database.initialize();
         new DatabaseManager(jdbcUrl).initialize();
@@ -57,7 +57,7 @@ class UserAndCategoryRepositoryTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {3, 99})
+    @ValueSource(ints = {7, 99})
     void rejectsUnknownSchemaVersion(int version) {
         execute("PRAGMA user_version = " + version);
         DataAccessException failure = assertThrows(DataAccessException.class, database::initialize);

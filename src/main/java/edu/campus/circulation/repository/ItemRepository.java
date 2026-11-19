@@ -15,6 +15,7 @@ public interface ItemRepository {
     boolean updateEditableFields(long itemId, ItemStatus expectedStatus, ItemDraft draft);
     boolean updateStatus(long itemId, ItemStatus expectedStatus, ItemStatus newStatus);
     boolean setInitialMeetupLocation(long itemId, MeetupLocation location);
+    boolean setInitialMeetupLocation(long itemId, MeetupLocation location, Instant meetupAt);
     Optional<Item> findById(long id);
     List<Item> findByOwner(long ownerId);
     List<Item> searchAvailable(ItemSearchFilter filter);

@@ -8,5 +8,9 @@ public record Exchange(
         long requesterId,
         ExchangeStatus status,
         Instant createdAt,
-        Instant completedAt) {
+        Instant completedAt,
+        int quantity) {
+    public Exchange(long id, long itemId, long requesterId, ExchangeStatus status, Instant createdAt, Instant completedAt) {
+        this(id, itemId, requesterId, status, createdAt, completedAt, 1);
+    }
 }

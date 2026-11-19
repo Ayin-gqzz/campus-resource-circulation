@@ -65,15 +65,17 @@ DataAccessException
 | 操作 | 意向变化 | 物品变化 |
 | --- | --- | --- |
 | 提交意向 | 创建 `PENDING`，同时保存首条留言 | 保持 `AVAILABLE` |
-| 接受 | 指定意向进入 `ACCEPTED`，同一物品的其他 `PENDING` 进入 `REJECTED` | `AVAILABLE → RESERVED` |
+| 接受 | 指定意向进入 `ACCEPTED`，余量归零时其他 `PENDING` 进入 `REJECTED` | 预留本次数量；有余量保持 `AVAILABLE`，无余量进入 `RESERVED` |
 | 拒绝 / 撤回待处理意向 | `PENDING → REJECTED` / `CANCELLED` | 保持 `AVAILABLE` |
-| 参与人取消已接受意向 | `ACCEPTED → CANCELLED` | `RESERVED → AVAILABLE` |
-| 发布人确认交接完成 | `ACCEPTED → COMPLETED`，写入完成时间 | `RESERVED → COMPLETED` |
+| 参与人取消已接受意向 | `ACCEPTED → CANCELLED` | 仅释放本次数量，恢复或保持 `AVAILABLE`；从无货恢复有货时写入提醒 |
+| 发布人确认交接完成 | `ACCEPTED → COMPLETED`，写入完成时间 | 按余量、未交接预定数重算；全部成交后进入 `COMPLETED` |
 | 下架 | 全部 `PENDING → CANCELLED`。管理员下架已锁定物品时，当前 `ACCEPTED → CANCELLED` | 在架物品进入 `WITHDRAWN`，管理员也可下架已锁定物品 |
 
 已完成与已下架的物品保留原记录。已拒绝、取消、完成的意向保留历史和留言。停用学生前检查其是否有已接受意向，若有则拒绝停用并提示先处理。否则在同一事务内停用账号并取消其作为发布人或请求人的待处理意向。停用账号的物品在检索时隐藏，恢复账号后重新按物品状态显示。
 
 对接受、取消、完成等动作先取得 SQLite 写事务，再读取状态并校验权限。更新语句以预期旧状态为条件，影响行数不符时回滚并提示刷新。任何一步失败都回滚，避免出现意向与物品状态不一致。
+
+库存数量来自 `items.quantity`，已预定和已成交数量分别汇总 `exchanges.quantity` 中的 `ACCEPTED`、`COMPLETED` 记录。接受或完成的 SQL 会扣除其他已分配数量后检查容量；超额更新返回 false。服务层随后重算物品状态，避免部分成交关闭剩余库存。价格按单价保存，总价使用整数分对应的 BigDecimal 乘以意向数量；分类完成统计也按成交件数汇总。
 
 ## 三种设计模式候选
 

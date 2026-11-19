@@ -186,7 +186,7 @@ class ExchangeAndReviewRepositoryTest {
     }
 
     @Test
-    void onlyOneAcceptedOrCompletedExchangeIsAllowedPerItem() {
+    void cannotAllocateMoreThanTheSingleUnitInStock() {
         long owner = student("owner");
         long requester = student("requester");
         long other = student("other");
@@ -194,13 +194,11 @@ class ExchangeAndReviewRepositoryTest {
         long selected = exchanges.insertWithFirstMessage(item, requester, "Selected", NOW);
         long competing = exchanges.insertWithFirstMessage(item, other, "Other", NOW);
         assertTrue(exchanges.transitionStatus(selected, ExchangeStatus.PENDING, ExchangeStatus.ACCEPTED, null));
-        assertThrows(UniqueConstraintException.class, () -> exchanges.transitionStatus(
-                competing, ExchangeStatus.PENDING, ExchangeStatus.ACCEPTED, null));
+        assertFalse(exchanges.transitionStatus(competing, ExchangeStatus.PENDING, ExchangeStatus.ACCEPTED, null));
         assertStatus(competing, ExchangeStatus.PENDING);
         assertTrue(exchanges.transitionStatus(selected, ExchangeStatus.ACCEPTED, ExchangeStatus.COMPLETED,
                 NOW.plusSeconds(1)));
-        assertThrows(UniqueConstraintException.class, () -> exchanges.transitionStatus(
-                competing, ExchangeStatus.PENDING, ExchangeStatus.ACCEPTED, null));
+        assertFalse(exchanges.transitionStatus(competing, ExchangeStatus.PENDING, ExchangeStatus.ACCEPTED, null));
     }
 
     @Test

@@ -26,7 +26,8 @@ public final class App {
         Path file = Path.of(System.getProperty("campus.demo.db", "data/demo.db")).toAbsolutePath();
         try {
             DemoService service = new DemoService(DemoDatabase.open(file));
-            SwingUtilities.invokeLater(() -> new DemoWindow(service, file).setVisible(true));
+            var profiles = service.profiles();
+            SwingUtilities.invokeLater(() -> DemoWindow.open(service, file, profiles));
         } catch (IOException | DataAccessException failure) {
             LOGGER.log(Level.SEVERE, "演示数据库初始化失败", failure);
             SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null,

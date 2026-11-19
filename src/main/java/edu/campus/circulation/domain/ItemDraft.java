@@ -10,5 +10,10 @@ public record ItemDraft(
         TradeType tradeType,
         Long priceCents,
         String swapNote,
-        List<String> tags) {
+        List<String> tags,
+        int quantity) {
+    public ItemDraft(long categoryId, String title, String description, ItemCondition condition, TradeType tradeType,
+            Long priceCents, String swapNote, List<String> tags) {
+        this(categoryId, title, description, condition, tradeType, priceCents, swapNote, tags, 1);
+    }
 }

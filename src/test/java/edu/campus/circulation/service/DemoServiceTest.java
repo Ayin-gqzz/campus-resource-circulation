@@ -11,12 +11,15 @@ import edu.campus.circulation.domain.MeetupLocation;
 import edu.campus.circulation.domain.MeetupLocation.Campus;
 import edu.campus.circulation.service.DemoService.Action;
 import edu.campus.circulation.service.DemoService.Condition;
+import edu.campus.circulation.service.DemoService.Credit;
 import edu.campus.circulation.service.DemoService.Draft;
+import edu.campus.circulation.service.DemoService.PeerProfile;
 import edu.campus.circulation.service.DemoService.Status;
 import edu.campus.circulation.service.DemoService.TradeType;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.sql.DriverManager;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,13 +28,48 @@ class DemoServiceTest {
     Path directory;
 
     @Test
+    void peerProfilesExposeOnlyTheCounterpartForAFlowParticipant() throws Exception {
+        DemoService service = open(directory.resolve("peer.db"));
+        var completed = service.history(CHEN).stream()
+                .filter(exchange -> exchange.status() == Status.COMPLETED).findFirst().orElseThrow();
+        assertEquals(new PeerProfile(LIN.id(), new Credit(1, 5.0), service.joinedAt(LIN)),
+                service.peerProfile(CHEN, completed.id()));
+        assertEquals(new PeerProfile(CHEN.id(), new Credit(1, 4.0), service.joinedAt(CHEN)),
+                service.peerProfile(LIN, completed.id()));
+
+        var wang = service.profiles().stream().filter(profile -> profile.label().equals("王同学"))
+                .findFirst().orElseThrow();
+        assertThrows(IllegalArgumentException.class, () -> service.peerProfile(wang, completed.id()));
+        var pending = service.history(wang).get(0);
+        assertEquals(new PeerProfile(wang.id(), new Credit(0, 0.0), service.joinedAt(wang)),
+                service.peerProfile(LIN, pending.id()));
+    }
+
+    @Test
+    void countsJoiningDaysAtBeijingMidnight() {
+        var peer = new PeerProfile(LIN.id(), new Credit(0, 0.0), Instant.parse("2026-11-18T15:55:00Z"));
+        assertEquals(0, peer.daysSinceJoining(Instant.parse("2026-11-18T15:59:00Z")));
+        assertEquals(1, peer.daysSinceJoining(Instant.parse("2026-11-18T16:00:00Z")));
+        assertEquals(0, peer.daysSinceJoining(Instant.parse("2026-11-17T16:00:00Z")));
+    }
+
+    @Test
     void publishRequestCompleteAndReviewAcrossReopen() throws Exception {
         Path file = directory.resolve("demo.db");
         DemoService service = open(file);
+        int initialMarketSize = service.market("", null).size();
+        Instant joined = service.joinedAt(LIN);
+        assertEquals(5.0, service.credit(LIN).average());
+        assertEquals(4.0, service.credit(CHEN).average());
+        assertEquals(1, service.credit(LIN).count());
+        assertEquals(1, service.credit(CHEN).count());
+        assertEquals(Status.COMPLETED, service.history(CHEN).get(0).status());
+        assertTrue(service.history(CHEN).get(0).itemTitle().startsWith("【示例】"));
         MeetupLocation location = new MeetupLocation(Campus.GUIZISHAN, "图书馆入口");
         assertThrows(IllegalArgumentException.class, () -> service.publish(LIN,
                 new Draft(1, "线性代数教材", "保存完好", Condition.GOOD, TradeType.SALE, 1800L, "", null)));
-        service.publish(LIN, new Draft(1, "线性代数教材", "保存完好", Condition.GOOD, TradeType.SALE, 1800L, "", location));
+        service.publish(LIN, new Draft(1, "线性代数教材", "保存完好", Condition.GOOD, TradeType.SALE, 1800L, "", location,
+                Instant.now().plusSeconds(86400)));
         var item = service.market("线性代数", 1L).get(0);
         assertEquals(1800L, item.priceCents());
         assertEquals(location, item.location());
@@ -56,7 +94,10 @@ class DemoServiceTest {
         assertEquals(location, persisted.location());
         assertEquals(4.0, reopened.credit(CHEN).average());
         assertEquals(5.0, reopened.credit(LIN).average());
-        assertEquals(3, reopened.market("", null).size());
+        assertEquals(2, reopened.credit(CHEN).count());
+        assertEquals(2, reopened.credit(LIN).count());
+        assertEquals(joined, reopened.joinedAt(LIN));
+        assertEquals(initialMarketSize, reopened.market("", null).size());
     }
 
     @Test
@@ -83,7 +124,10 @@ class DemoServiceTest {
                     """);
         }
         DemoService service = open(file);
-        var item = service.market("", null).get(0);
+        assertEquals(Instant.parse("2026-11-12T00:00:00Z"), service.joinedAt(LIN));
+        assertEquals(1, service.credit(LIN).count());
+        assertEquals(1, open(file).credit(LIN).count());
+        var item = service.market("旧教材", null).get(0);
         assertEquals("旧教材", item.title());
         assertThrows(IllegalArgumentException.class, () -> new MeetupLocation(null, "图书馆入口"));
         assertThrows(IllegalArgumentException.class, () -> new MeetupLocation(Campus.NANHU, "  "));
