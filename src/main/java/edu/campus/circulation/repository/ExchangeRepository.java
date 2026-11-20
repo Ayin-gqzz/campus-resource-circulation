@@ -12,6 +12,7 @@ import java.util.Optional;
 
 public interface ExchangeRepository {
     long insertWithFirstMessage(long itemId, long requesterId, String firstMessageBody, Instant now);
+    long insertWithFirstMessage(long itemId, long requesterId, String firstMessageBody, Instant now, int quantity);
     long insertMessage(long exchangeId, long senderId, String body, Instant sentAt);
     Optional<Exchange> findById(long id);
     List<ExchangeMessage> findMessages(long exchangeId);

@@ -1,10 +1,12 @@
 package edu.campus.circulation.repository;
 
 import edu.campus.circulation.domain.Item;
+import edu.campus.circulation.domain.Inventory;
 import edu.campus.circulation.domain.ItemCondition;
 import edu.campus.circulation.domain.ItemDraft;
 import edu.campus.circulation.domain.ItemSearchFilter;
 import edu.campus.circulation.domain.ItemStatus;
+import edu.campus.circulation.domain.MeetupLocation;
 import edu.campus.circulation.domain.TradeType;
 
 import java.sql.Connection;
@@ -23,8 +25,11 @@ import java.util.Optional;
 public final class JdbcItemRepository implements ItemRepository {
     private static final String ITEM_COLUMNS = """
             SELECT i.id, i.owner_id, i.category_id, i.title, i.description, i.condition,
-                   i.trade_type, i.price_cents, i.swap_note, i.status, i.created_at
-            FROM items i""";
+                   i.trade_type, i.price_cents, i.swap_note, i.status, i.created_at, m.campus, m.location, m.meetup_at,
+                   i.quantity,
+                   (SELECT coalesce(sum(e.quantity),0) FROM exchanges e WHERE e.item_id=i.id AND e.status='ACCEPTED') AS reserved_quantity,
+                   (SELECT coalesce(sum(e.quantity),0) FROM exchanges e WHERE e.item_id=i.id AND e.status='COMPLETED') AS completed_quantity
+            FROM items i LEFT JOIN item_meetup_locations m ON m.item_id = i.id""";
 
     private final DatabaseManager database;
 
@@ -39,12 +44,13 @@ public final class JdbcItemRepository implements ItemRepository {
             long itemId;
             try (PreparedStatement statement = connection.prepareStatement("""
                     INSERT INTO items (owner_id, category_id, title, description, condition, trade_type,
-                                       price_cents, swap_note, status, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'AVAILABLE', ?) RETURNING id
+                                       price_cents, swap_note, status, created_at, quantity)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'AVAILABLE', ?, ?) RETURNING id
                     """)) {
                 statement.setLong(1, ownerId);
                 bindEditableFields(statement, 2, draft);
                 statement.setString(9, UtcTimestamps.format(createdAt));
+                statement.setInt(10, draft.quantity());
                 try (ResultSet result = statement.executeQuery()) {
                     result.next();
                     itemId = result.getLong(1);
@@ -62,12 +68,16 @@ public final class JdbcItemRepository implements ItemRepository {
             try (PreparedStatement statement = connection.prepareStatement("""
                     UPDATE items
                     SET category_id = ?, title = ?, description = ?, condition = ?,
-                        trade_type = ?, price_cents = ?, swap_note = ?
-                    WHERE id = ? AND status = ?
+                        trade_type = ?, price_cents = ?, swap_note = ?, quantity = ?
+                    WHERE id = ? AND status = ? AND ? >=
+                    (SELECT coalesce(sum(e.quantity),0) FROM exchanges e
+                     WHERE e.item_id=items.id AND e.status IN ('ACCEPTED','COMPLETED'))
                     """)) {
                 bindEditableFields(statement, 1, draft);
-                statement.setLong(8, itemId);
-                statement.setString(9, expectedStatus.name());
+                statement.setInt(8, draft.quantity());
+                statement.setLong(9, itemId);
+                statement.setString(10, expectedStatus.name());
+                statement.setInt(11, draft.quantity());
                 if (statement.executeUpdate() != 1) {
                     return false;
                 }
@@ -95,6 +105,42 @@ public final class JdbcItemRepository implements ItemRepository {
     }
 
     @Override
+    public boolean setInitialMeetupLocation(long itemId, MeetupLocation location) {
+        return setInitialMeetupLocation(itemId, location, null);
+    }
+
+    @Override
+    public boolean setInitialMeetupLocation(long itemId, MeetupLocation location, Instant meetupAt) {
+        return database.inWriteTransaction(() -> database.executeWithConnection(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                    INSERT INTO item_meetup_locations (item_id, campus, location, meetup_at)
+                    SELECT id, ?, ?, ? FROM items WHERE id = ? AND status IN ('AVAILABLE', 'RESERVED')
+                    ON CONFLICT (item_id) DO NOTHING
+                    """)) {
+                statement.setString(1, location.campus().name());
+                statement.setString(2, location.place());
+                statement.setString(3, meetupAt == null ? null : UtcTimestamps.format(meetupAt));
+                statement.setLong(4, itemId);
+                boolean saved = statement.executeUpdate() == 1;
+                if (saved) {
+                    try (var snapshot = connection.prepareStatement("""
+                            UPDATE exchange_terms SET campus = ?, location = ?, meetup_at = coalesce(meetup_at, ?)
+                            WHERE campus IS NULL AND exchange_id IN
+                            (SELECT id FROM exchanges WHERE item_id = ? AND status IN ('PENDING', 'ACCEPTED'))
+                            """)) {
+                        snapshot.setString(1, location.campus().name());
+                        snapshot.setString(2, location.place());
+                        snapshot.setString(3, meetupAt == null ? null : UtcTimestamps.format(meetupAt));
+                        snapshot.setLong(4, itemId);
+                        snapshot.executeUpdate();
+                    }
+                }
+                return saved;
+            }
+        }));
+    }
+
+    @Override
     public Optional<Item> findById(long id) {
         List<Item> items = database.executeWithConnection(
                 connection -> readItems(connection, ITEM_COLUMNS + " WHERE i.id = ?", id));
@@ -112,7 +158,8 @@ public final class JdbcItemRepository implements ItemRepository {
         return database.executeWithConnection(connection -> {
             StringBuilder sql = new StringBuilder(ITEM_COLUMNS)
                     .append(" JOIN users u ON u.id = i.owner_id")
-                    .append(" WHERE i.status = 'AVAILABLE' AND u.enabled = 1");
+                    .append(" WHERE i.status = 'AVAILABLE' AND u.enabled = 1 AND i.quantity >")
+                    .append(" (SELECT coalesce(sum(e.quantity),0) FROM exchanges e WHERE e.item_id=i.id AND e.status IN ('ACCEPTED','COMPLETED'))");
             List<Object> parameters = new ArrayList<>();
             if (filter.categoryId() != null) {
                 sql.append(" AND i.category_id = ?");
@@ -273,6 +320,9 @@ public final class JdbcItemRepository implements ItemRepository {
                 tags.add(tagResult.getString(1));
             }
         }
+        String campus = result.getString("campus");
+        MeetupLocation location = campus == null ? null
+                : new MeetupLocation(MeetupLocation.Campus.valueOf(campus), result.getString("location"));
         return new Item(id, result.getLong("owner_id"), result.getLong("category_id"),
                 result.getString("title"), result.getString("description"),
                 ItemCondition.valueOf(result.getString("condition")),
@@ -280,6 +330,8 @@ public final class JdbcItemRepository implements ItemRepository {
                 priceCents, result.getString("swap_note"),
                 ItemStatus.valueOf(result.getString("status")),
                 List.copyOf(tags),
-                UtcTimestamps.parse(result.getString("created_at")));
+                UtcTimestamps.parse(result.getString("created_at")), location,
+                result.getString("meetup_at") == null ? null : UtcTimestamps.parse(result.getString("meetup_at")),
+                new Inventory(result.getInt("quantity"), result.getInt("reserved_quantity"), result.getInt("completed_quantity")));
     }
 }

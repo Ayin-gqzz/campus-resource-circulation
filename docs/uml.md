@@ -34,6 +34,8 @@ classDiagram
         +ItemStatus status
         +List~String~ tags
         +Instant createdAt
+        +Instant meetupAt
+        +Inventory inventory
     }
     class Exchange {
         +long id
@@ -42,6 +44,7 @@ classDiagram
         +ExchangeStatus status
         +Instant createdAt
         +Instant completedAt
+        +int quantity
     }
     class ExchangeMessage {
         +long id
@@ -74,6 +77,18 @@ classDiagram
     User "1" --> "0..*" Item : publishes
     Category "1" --> "0..*" Item : classifies
     Item "1" --> "0..*" Exchange
+    Item "1" *-- "0..1" MeetupLocation
+    Item "1" *-- "1" Inventory
+    class Inventory {
+        +int quantity
+        +int reserved
+        +int completed
+        +available() int
+    }
+    class MeetupLocation {
+        +Campus campus
+        +String place
+    }
     User "1" --> "0..*" Exchange : requests
     Exchange "1" *-- "1..*" ExchangeMessage
     User "1" --> "0..*" ExchangeMessage : sends
@@ -163,8 +178,8 @@ sequenceDiagram
     participant RevRepo as ReviewRepository
 
     Buyer->>UI: 发起意向并附留言
-    UI->>Trade: request(itemId, message)
-    Trade->>ExRepo: insertWithFirstMessage(itemId, requesterId, message, now)
+    UI->>Trade: request(itemId, message, quantity)
+    Trade->>ExRepo: insertWithFirstMessage(itemId, requesterId, message, now, quantity)
     ExRepo->>DB: inWriteTransaction（写入 PENDING 意向 + 首条留言）
     ExRepo-->>Trade: 返回 exchangeId
     Trade-->>UI: 显示待处理
@@ -172,26 +187,41 @@ sequenceDiagram
     Owner->>UI: 接受意向
     UI->>Trade: transition(exchangeId, ACCEPT)
     Trade->>DB: inWriteTransaction
-    Trade->>ExRepo: transitionStatus(exchangeId, PENDING, ACCEPTED, null)
-    Trade->>ExRepo: rejectOtherPendingByItem(itemId, exchangeId)
-    Trade->>ItemRepo: updateStatus(itemId, AVAILABLE, RESERVED)
-    alt 状态均符合预期
+    Trade->>Trade: 校验发布人、待处理状态、交接条件和余量
+    alt 校验与更新成功
+        Trade->>ExRepo: transitionStatus（接受本笔，写入时再次检查容量）
+        Trade->>ItemRepo: findById（汇总库存）并重算物品状态
+        opt 剩余库存归零
+            Trade->>ExRepo: rejectOtherPendingByItem(itemId, exchangeId)
+        end
         DB-->>Trade: 提交事务
         Trade-->>UI: 显示已接受
-        Note over Buyer,Owner: 双方线下完成交接
-        Owner->>UI: 确认流转完成
-        UI->>Trade: transition(exchangeId, COMPLETE)
-        Trade->>DB: inWriteTransaction
-        Trade->>ExRepo: transitionStatus(exchangeId, ACCEPTED, COMPLETED, now)
-        Trade->>ItemRepo: updateStatus(itemId, RESERVED, COMPLETED)
-        DB-->>Trade: 提交事务
-        Trade-->>UI: 显示已完成
-        Buyer->>UI: 评价发布人
-        UI->>Rate: submit(exchangeId, stars, comment)
-        Rate->>ExRepo: findById(exchangeId) 校验完成状态与参与身份
-        Rate->>RevRepo: insert(review)
-        Rate-->>UI: 显示评价结果
-    else 权限或状态冲突
+        alt 任一参与人取消
+            UI->>Trade: transition(exchangeId, CANCEL)
+            Trade->>DB: inWriteTransaction
+            Trade->>ExRepo: transitionStatus(exchangeId, ACCEPTED, CANCELLED, null)
+            Trade->>ItemRepo: 汇总释放后的库存并重算状态
+            opt 余量从零恢复为有货
+                Trade->>DB: 写入符合条件的站内提醒
+            end
+            DB-->>Trade: 提交事务
+            Trade-->>UI: 显示已取消，物品恢复在架
+        else 双方完成交接
+            Note over Buyer,Owner: 双方线下完成交接
+            Owner->>UI: 确认流转完成
+            UI->>Trade: transition(exchangeId, COMPLETE)
+            Trade->>DB: inWriteTransaction
+            Trade->>ExRepo: transitionStatus(exchangeId, ACCEPTED, COMPLETED, now)
+            Trade->>ItemRepo: 汇总本次成交后库存并重算状态
+            DB-->>Trade: 提交事务
+            Trade-->>UI: 显示已完成
+            Buyer->>UI: 评价发布人
+            UI->>Rate: submit(exchangeId, stars, comment)
+            Rate->>ExRepo: findById(exchangeId) 校验完成状态与参与身份
+            Rate->>RevRepo: insert(review)
+            Rate-->>UI: 显示评价结果
+        end
+    else 校验失败、库存不足或写入冲突
         DB-->>Trade: 回滚事务
         Trade-->>UI: 提示操作失败并刷新记录
     end

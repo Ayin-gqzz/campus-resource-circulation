@@ -1,0 +1,6 @@
+BEGIN IMMEDIATE;
+ALTER TABLE items ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity BETWEEN 1 AND 9999);
+ALTER TABLE exchanges ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity BETWEEN 1 AND 9999);
+DROP INDEX exchange_one_successful_per_item;
+PRAGMA user_version = 6;
+COMMIT;

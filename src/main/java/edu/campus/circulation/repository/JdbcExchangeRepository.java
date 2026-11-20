@@ -17,7 +17,7 @@ import java.util.Optional;
 
 public final class JdbcExchangeRepository implements ExchangeRepository {
     private static final String EXCHANGE_COLUMNS = """
-            SELECT id, item_id, requester_id, status, created_at, completed_at FROM exchanges""";
+            SELECT id, item_id, requester_id, status, created_at, completed_at, quantity FROM exchanges""";
 
     private final DatabaseManager database;
 
@@ -27,20 +27,38 @@ public final class JdbcExchangeRepository implements ExchangeRepository {
 
     @Override
     public long insertWithFirstMessage(long itemId, long requesterId, String firstMessageBody, Instant now) {
+        return insertWithFirstMessage(itemId, requesterId, firstMessageBody, now, 1);
+    }
+
+    @Override
+    public long insertWithFirstMessage(long itemId, long requesterId, String firstMessageBody, Instant now, int quantity) {
         return database.inWriteTransaction(() -> {
             long exchangeId = database.executeWithConnection(connection -> {
                 try (PreparedStatement statement = connection.prepareStatement("""
-                        INSERT INTO exchanges (item_id, requester_id, status, created_at)
-                        VALUES (?, ?, 'PENDING', ?) RETURNING id
+                        INSERT INTO exchanges (item_id, requester_id, status, created_at, quantity)
+                        VALUES (?, ?, 'PENDING', ?, ?) RETURNING id
                         """)) {
                     statement.setLong(1, itemId);
                     statement.setLong(2, requesterId);
                     statement.setString(3, UtcTimestamps.format(now));
+                    statement.setInt(4, quantity);
                     try (ResultSet result = statement.executeQuery()) {
                         result.next();
                         return result.getLong(1);
                     }
                 }
+            });
+            database.executeWithConnection(connection -> {
+                try (var statement = connection.prepareStatement("""
+                        INSERT INTO exchange_terms (exchange_id, price_cents, campus, location, meetup_at)
+                        SELECT ?, i.price_cents, m.campus, m.location, m.meetup_at FROM items i
+                        LEFT JOIN item_meetup_locations m ON m.item_id = i.id WHERE i.id = ?
+                        """)) {
+                    statement.setLong(1, exchangeId);
+                    statement.setLong(2, itemId);
+                    statement.executeUpdate();
+                }
+                return null;
             });
             insertMessage(exchangeId, requesterId, firstMessageBody, now);
             return exchangeId;
@@ -128,11 +146,17 @@ public final class JdbcExchangeRepository implements ExchangeRepository {
         return database.executeWithConnection(connection -> {
             try (PreparedStatement statement = connection.prepareStatement("""
                     UPDATE exchanges SET status = ?, completed_at = ? WHERE id = ? AND status = ?
+                    AND (? NOT IN ('ACCEPTED','COMPLETED') OR quantity <=
+                        (SELECT i.quantity - coalesce((SELECT sum(other.quantity) FROM exchanges other
+                         WHERE other.item_id=i.id AND other.id<>exchanges.id
+                         AND other.status IN ('ACCEPTED','COMPLETED')),0)
+                         FROM items i WHERE i.id=exchanges.item_id))
                     """)) {
                 statement.setString(1, newStatus.name());
                 statement.setString(2, completedAt == null ? null : UtcTimestamps.format(completedAt));
                 statement.setLong(3, exchangeId);
                 statement.setString(4, expectedOld.name());
+                statement.setString(5, newStatus.name());
                 return statement.executeUpdate() == 1;
             }
         });
@@ -182,7 +206,7 @@ public final class JdbcExchangeRepository implements ExchangeRepository {
     public List<CategoryStatRow> summarizeCompletedByCategory(StatsFilter filter) {
         return database.executeWithConnection(connection -> {
             StringBuilder sql = new StringBuilder("""
-                    SELECT c.id, c.name, COUNT(*) AS completed_count, c.avoided_grams, c.factor_source
+                    SELECT c.id, c.name, SUM(e.quantity) AS completed_count, c.avoided_grams, c.factor_source
                     FROM exchanges e JOIN items i ON i.id = e.item_id JOIN categories c ON c.id = i.category_id
                     WHERE e.status = 'COMPLETED'""");
             List<Object> parameters = new ArrayList<>();
@@ -240,7 +264,7 @@ public final class JdbcExchangeRepository implements ExchangeRepository {
                     exchanges.add(new Exchange(result.getLong("id"), result.getLong("item_id"),
                             result.getLong("requester_id"), ExchangeStatus.valueOf(result.getString("status")),
                             UtcTimestamps.parse(result.getString("created_at")),
-                            completedAt == null ? null : UtcTimestamps.parse(completedAt)));
+                            completedAt == null ? null : UtcTimestamps.parse(completedAt), result.getInt("quantity")));
                 }
             }
             return List.copyOf(exchanges);

@@ -41,6 +41,11 @@
                 <targetPath>database</targetPath>
                 <includes>
                     <include>001_initial.sql</include>
+                    <include>002_meetup_locations.sql</include>
+                    <include>003_exchange_negotiations.sql</include>
+                    <include>004_notifications.sql</include>
+                    <include>005_meetup_time.sql</include>
+                    <include>006_inventory.sql</include>
                 </includes>
             </resource>
         </resources>
