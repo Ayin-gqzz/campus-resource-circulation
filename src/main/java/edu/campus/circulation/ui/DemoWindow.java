@@ -804,6 +804,104 @@ public final class DemoWindow extends JFrame {
         });
     }
 
+    private java.io.File bookImageDirectory() {
+        try {
+            java.io.File location = new java.io.File(DemoWindow.class.getProtectionDomain()
+                    .getCodeSource().getLocation().toURI());
+            java.io.File directory = location.isFile() ? location.getParentFile() : location;
+            while (directory != null) {
+                java.io.File samples = new java.io.File(directory, "sample-images");
+                if (samples.isDirectory()) return samples;
+                directory = directory.getParentFile();
+            }
+        } catch (Exception ignored) {
+            // Fall back to the working directory for alternative launchers.
+        }
+        return new java.io.File("sample-images").getAbsoluteFile();
+    }
+
+    /** Local-image demo using filename matching, not OCR or AI inference. */
+    private JPanel bookImagePanel(JTextField name, JTextArea description, JComboBox<Category> category) {
+        String[][] samples = {
+                {"高等数学（上册）", "数学", "高等数学", "高数", "calculus"},
+                {"大学英语综合教程", "英语", "大学英语", "英语", "english"},
+                {"Java 程序设计", "计算机", "java"},
+                {"线性代数", "数学", "线性代数", "线代"},
+                {"大学物理", "物理", "大学物理", "物理", "physics"}
+        };
+        JPanel panel = new JPanel(new BorderLayout(0, 6));
+        panel.setBorder(javax.swing.BorderFactory.createTitledBorder("图片识别"));
+        JLabel preview = new JLabel("请选择本地书籍封面", JLabel.CENTER);
+        JLabel result = new JLabel("识别结果：书名、科目");
+        javax.swing.JButton upload = new javax.swing.JButton("上传本地图片");
+        upload.setToolTipText("模拟识别：按文件名匹配高数、英语、Java、线代、物理案例");
+        upload.addActionListener(event -> {
+            javax.swing.JFileChooser chooser = new javax.swing.JFileChooser(bookImageDirectory());
+            chooser.setDialogTitle("选择书籍封面图片");
+            chooser.setAcceptAllFileFilterUsed(false);
+            chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+                    "图片（JPG、PNG、GIF、BMP）", "jpg", "jpeg", "png", "gif", "bmp"));
+            if (chooser.showOpenDialog(panel) != javax.swing.JFileChooser.APPROVE_OPTION) {
+                return;
+            }
+            java.io.File file = chooser.getSelectedFile();
+            java.awt.image.BufferedImage image;
+            try {
+                image = javax.imageio.ImageIO.read(file);
+                if (image == null) {
+                    throw new java.io.IOException("不是有效的图片");
+                }
+            } catch (java.io.IOException exception) {
+                showError("无法读取图片，请选择有效的本地图片文件。");
+                return;
+            }
+            double scale = Math.min(160.0 / image.getWidth(), 120.0 / image.getHeight());
+            preview.setIcon(new javax.swing.ImageIcon(image.getScaledInstance(
+                    Math.max(1, (int) (image.getWidth() * scale)),
+                    Math.max(1, (int) (image.getHeight() * scale)), java.awt.Image.SCALE_SMOOTH)));
+            preview.setText(null);
+            preview.setToolTipText(file.getName());
+            String filename = file.getName().toLowerCase(Locale.ROOT);
+            String[] matched = null;
+            for (String[] sample : samples) {
+                for (int i = 2; i < sample.length; i++) {
+                    if (filename.contains(sample[i])) {
+                        matched = sample;
+                        break;
+                    }
+                }
+                if (matched != null) break;
+            }
+            if (matched == null) {
+                result.setText("未匹配预设案例，原表单未更改");
+                JOptionPane.showMessageDialog(panel,
+                        "此功能为模拟识别，按图片文件名匹配。文件名需包含：高数、英语、Java、线代或物理。",
+                        "未匹配案例", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            if ((!name.getText().isBlank() || !description.getText().isBlank())
+                    && JOptionPane.showConfirmDialog(panel, "用书名和科目覆盖当前名称、描述？", "填入结果",
+                    JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
+                result.setText("已取消填入，原表单未更改");
+                return;
+            }
+            name.setText(matched[0]);
+            description.setText("科目：" + matched[1]);
+            for (int i = 0; i < category.getItemCount(); i++) {
+                String label = category.getItemAt(i).name();
+                if (label.contains("书") || label.contains("教材")) {
+                    category.setSelectedIndex(i);
+                    break;
+                }
+            }
+            result.setText("书名：" + matched[0] + " · 科目：" + matched[1]);
+        });
+        panel.add(upload, BorderLayout.NORTH);
+        panel.add(preview, BorderLayout.CENTER);
+        panel.add(result, BorderLayout.SOUTH);
+        return panel;
+    }
+
     private void publishItem() {
         JTextField name = new JTextField(24);
         JTextArea description = new JTextArea(3, 24);
@@ -826,6 +924,7 @@ public final class DemoWindow extends JFrame {
         descriptionField.add(descriptionLabel, BorderLayout.NORTH);
         descriptionField.add(new JScrollPane(description), BorderLayout.CENTER);
         basics.add(descriptionField, BorderLayout.CENTER);
+        basics.add(bookImagePanel(name, description, category), BorderLayout.SOUTH);
         JPanel transaction = new JPanel(new BorderLayout(0, 8));
         transaction.add(fields("流转方式", type, termsLabel, terms), BorderLayout.NORTH);
         transaction.add(meetup.panel(), BorderLayout.CENTER);
