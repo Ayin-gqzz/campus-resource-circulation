@@ -14,7 +14,7 @@
 
 ## 快速开始
 
-本机已构建演示包时，可双击仓库根目录的 `启动校园循环.cmd`。启动器优先打开 `target/campus-resource-circulation-buy-sell.jar`，也兼容 Maven 构建的 `target/campus-resource-circulation-0.1.0-SNAPSHOT.jar`，并固定使用仓库内的 `data/demo.db`；无需解压 JAR，也无需修改文件关联。从 GitHub 下载源码后，先按下面的命令完成构建。
+本机已构建演示包时，可双击仓库根目录的 `启动校园循环.cmd`。启动器优先打开 Maven 构建的 `target/campus-resource-circulation-0.1.0-SNAPSHOT.jar`，也兼容 `target/campus-resource-circulation-buy-sell.jar`。启动器使用仓库内的 `data/demo.db`，无需解压 JAR 或修改文件关联。从 GitHub 下载源码后，先按下面的命令完成构建。
 
 安装 JDK 17+ 和 Maven 3.9+，确保 `java`、`mvn` 可在终端使用。
 
@@ -26,6 +26,16 @@ java -jar target/campus-resource-circulation-0.1.0-SNAPSHOT.jar
 如果已经下载 Jar，直接运行 `java -jar campus-resource-circulation-0.1.0-SNAPSHOT.jar` 即可。首次启动在工作目录下创建 `data/demo.db`，包含林、陈、王、周四个演示身份、17 条在架发布，以及一笔已完成的评价样例。旧演示库会自动补齐新版身份及集市样例，保留已有物品和流转结果；重复启动不会重复生成样例。也可用 `java -Dcampus.demo.db=demo-run.db -jar target/campus-resource-circulation-0.1.0-SNAPSHOT.jar` 指定独立数据库。
 
 ## 演示流程
+
+### 发布时标记所在楼栋
+
+从「闲置集市 → 发布物品 → 地图定位」打开校园地图。切换校区后，可以点选地图上的有色楼栋，使用「选择楼栋」下拉框，或搜索 `D05`、`南湖五栋`、`图书馆` 等。滚轮可缩放，拖动可平移。点击「一键定位」会在当前所选楼栋模拟定位，尚未选楼时则随机定位。
+
+地图使用 Java2D 离线绘制，内置两个校区的实际道路、建筑轮廓和 WGS84 坐标，共有 46 个可选建筑，其中 36 栋为学生宿舍。定位提示中的坐标对应地图上的模拟落点，精度为演示参数。确认后，楼栋名称和编号回填到可选的「所在楼栋」字段，发布成功后可在集市详情查看。交易校区、交接地点和时间另行填写。
+
+底图坐标和轮廓来自 OpenStreetMap，许可为 ODbL 1.0。每条地理记录保留对应的 OSM 对象编号。楼栋名称参考华中师范大学公开资料，`D05` 等编号为应用内编号。 [OpenStreetMap 许可与署名](https://www.openstreetmap.org/copyright) · [华中师大校园 GIS](https://gis.ccnu.edu.cn/) · [两校区迎新路线图](https://art.ccnu.edu.cn/info/1208/21117.htm) · [南湖校区地图](https://cs.ccnu.edu.cn/info/1056/13426.htm)
+
+### 交易流程
 
 1. 以默认的**陈同学**打开「闲置集市」，选中「高等数学教材」，点击「发起意向」并提交留言。
 2. 切换到**林同学**，在「我的流转」中选中记录并点击「接受」。模拟线下交接后点击「确认交接完成」。

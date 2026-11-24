@@ -48,6 +48,7 @@ class InventoryMigrationTest {
         assertEquals(new Inventory(1,1,0), items.findById(2).orElseThrow().inventory());
         assertEquals(new Inventory(1,0,1), items.findById(3).orElseThrow().inventory());
         assertEquals(ItemStatus.RESERVED, items.findById(2).orElseThrow().status());
+        assertNull(items.findById(2).orElseThrow().building());
         assertEquals(ItemStatus.COMPLETED, items.findById(3).orElseThrow().status());
         assertEquals(2000L, items.findById(2).orElseThrow().priceCents());
         assertEquals(1, new JdbcExchangeRepository(manager).findById(1).orElseThrow().quantity());

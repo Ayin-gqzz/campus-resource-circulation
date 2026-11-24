@@ -1,5 +1,6 @@
 package edu.campus.circulation.repository;
 
+import edu.campus.circulation.domain.CampusBuilding;
 import edu.campus.circulation.domain.Item;
 import edu.campus.circulation.domain.Inventory;
 import edu.campus.circulation.domain.ItemCondition;
@@ -26,7 +27,7 @@ public final class JdbcItemRepository implements ItemRepository {
     private static final String ITEM_COLUMNS = """
             SELECT i.id, i.owner_id, i.category_id, i.title, i.description, i.condition,
                    i.trade_type, i.price_cents, i.swap_note, i.status, i.created_at, m.campus, m.location, m.meetup_at,
-                   i.quantity,
+                   i.quantity, i.building_code,
                    (SELECT coalesce(sum(e.quantity),0) FROM exchanges e WHERE e.item_id=i.id AND e.status='ACCEPTED') AS reserved_quantity,
                    (SELECT coalesce(sum(e.quantity),0) FROM exchanges e WHERE e.item_id=i.id AND e.status='COMPLETED') AS completed_quantity
             FROM items i LEFT JOIN item_meetup_locations m ON m.item_id = i.id""";
@@ -44,13 +45,14 @@ public final class JdbcItemRepository implements ItemRepository {
             long itemId;
             try (PreparedStatement statement = connection.prepareStatement("""
                     INSERT INTO items (owner_id, category_id, title, description, condition, trade_type,
-                                       price_cents, swap_note, status, created_at, quantity)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'AVAILABLE', ?, ?) RETURNING id
+                                       price_cents, swap_note, status, created_at, quantity, building_code)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'AVAILABLE', ?, ?, ?) RETURNING id
                     """)) {
                 statement.setLong(1, ownerId);
                 bindEditableFields(statement, 2, draft);
                 statement.setString(9, UtcTimestamps.format(createdAt));
                 statement.setInt(10, draft.quantity());
+                statement.setString(11, draft.building() == null ? null : draft.building().name());
                 try (ResultSet result = statement.executeQuery()) {
                     result.next();
                     itemId = result.getLong(1);
@@ -323,6 +325,7 @@ public final class JdbcItemRepository implements ItemRepository {
         String campus = result.getString("campus");
         MeetupLocation location = campus == null ? null
                 : new MeetupLocation(MeetupLocation.Campus.valueOf(campus), result.getString("location"));
+        String buildingCode = result.getString("building_code");
         return new Item(id, result.getLong("owner_id"), result.getLong("category_id"),
                 result.getString("title"), result.getString("description"),
                 ItemCondition.valueOf(result.getString("condition")),
@@ -332,6 +335,7 @@ public final class JdbcItemRepository implements ItemRepository {
                 List.copyOf(tags),
                 UtcTimestamps.parse(result.getString("created_at")), location,
                 result.getString("meetup_at") == null ? null : UtcTimestamps.parse(result.getString("meetup_at")),
-                new Inventory(result.getInt("quantity"), result.getInt("reserved_quantity"), result.getInt("completed_quantity")));
+                new Inventory(result.getInt("quantity"), result.getInt("reserved_quantity"), result.getInt("completed_quantity")),
+                buildingCode == null ? null : CampusBuilding.valueOf(buildingCode));
     }
 }

@@ -46,6 +46,7 @@
                     <include>004_notifications.sql</include>
                     <include>005_meetup_time.sql</include>
                     <include>006_inventory.sql</include>
+                    <include>007_item_building.sql</include>
                 </includes>
             </resource>
         </resources>

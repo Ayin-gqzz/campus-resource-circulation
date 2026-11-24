@@ -1,5 +1,6 @@
 package edu.campus.circulation.ui;
 
+import edu.campus.circulation.domain.CampusBuilding;
 import edu.campus.circulation.domain.MeetupLocation;
 import edu.campus.circulation.domain.ItemStatus;
 import edu.campus.circulation.domain.Inventory;
@@ -708,6 +709,8 @@ public final class DemoWindow extends JFrame {
                 : locationText(item.location()) + "\n" + timeText(item.meetupAt()));
         itemDetails.setText(item == null ? "" : terms(item) + "\n" + item.condition()
                 + " · " + nameOf(item.ownerId()) + "\n\n"
+                + (item.building() == null ? "" : "所在楼栋：" + item.building().campus()
+                        + " · " + item.building().displayName() + "\n\n")
                 + inventoryText(item.inventory()) + "\n\n"
                 + item.pendingCount() + " 人已提交意向，发布人接受对应数量后才预定成功。\n\n" + item.description());
         exchangeTitle.setText(exchange == null ? "选择一条流转" : exchange.itemTitle());
@@ -912,6 +915,7 @@ public final class DemoWindow extends JFrame {
         JTextField terms = new JTextField(24);
         QuantityField quantity = new QuantityField(9999);
         MeetupFields meetup = new MeetupFields();
+        BuildingField building = new BuildingField(meetup.campus);
         JLabel termsLabel = new JLabel("单价（元/件）");
         type.addActionListener(event -> termsLabel.setText(
                 type.getSelectedItem() == TradeType.SALE ? "单价（元/件）" : "期望换物（每件）"));
@@ -926,7 +930,7 @@ public final class DemoWindow extends JFrame {
         basics.add(descriptionField, BorderLayout.CENTER);
         basics.add(bookImagePanel(name, description, category), BorderLayout.SOUTH);
         JPanel transaction = new JPanel(new BorderLayout(0, 8));
-        transaction.add(fields("流转方式", type, termsLabel, terms), BorderLayout.NORTH);
+        transaction.add(fields("流转方式", type, termsLabel, terms, "所在楼栋（选填）", building), BorderLayout.NORTH);
         transaction.add(meetup.panel(), BorderLayout.CENTER);
         form.add(basics);
         form.add(transaction);
@@ -971,7 +975,8 @@ public final class DemoWindow extends JFrame {
             }
             Profile actor = profile();
             Draft draft = new Draft(((Category) category.getSelectedItem()).id(), name.getText(),
-                    description.getText(), (Condition) condition.getSelectedItem(), tradeType, cents, terms.getText(), location, meetupAt, itemQuantity);
+                    description.getText(), (Condition) condition.getSelectedItem(), tradeType, cents, terms.getText(),
+                    location, meetupAt, itemQuantity, building.selected);
             runTask(() -> {
                 service.publish(actor, draft);
                 return null;
@@ -1358,6 +1363,37 @@ public final class DemoWindow extends JFrame {
             return "未记录（旧记录）";
         }
         return locationText(exchange.location());
+    }
+
+    private static final class BuildingField extends JPanel {
+        private final JTextField value = new JTextField(13);
+        private final JButton clear = new Button("清除", Role.SECONDARY);
+        private CampusBuilding selected;
+
+        private BuildingField(JComboBox<Campus> meetupCampus) {
+            super(new BorderLayout(6, 0));
+            value.setEditable(false);
+            value.getAccessibleContext().setAccessibleName("所在楼栋");
+            field(value);
+            JButton pick = new Button("地图定位", Role.SECONDARY);
+            pick.addActionListener(event -> BuildingPickerDialog.pick(pick, (Campus) meetupCampus.getSelectedItem(), selected)
+                    .ifPresent(this::setBuilding));
+            clear.addActionListener(event -> setBuilding(null));
+            JPanel actions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 5, 0));
+            actions.add(pick);
+            actions.add(clear);
+            add(value, BorderLayout.CENTER);
+            add(actions, BorderLayout.EAST);
+            setBuilding(null);
+        }
+
+        private void setBuilding(CampusBuilding building) {
+            selected = building;
+            value.setText(building == null ? "" : building.displayName());
+            value.setToolTipText(building == null ? "可从两个校区的地图中选择物品所在楼栋"
+                    : building.campus() + " · " + building.displayName());
+            clear.setEnabled(building != null);
+        }
     }
 
     private static final class MeetupFields {

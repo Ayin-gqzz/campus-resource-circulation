@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import edu.campus.circulation.repository.DemoDatabase;
+import edu.campus.circulation.domain.CampusBuilding;
 import edu.campus.circulation.domain.MeetupLocation;
 import edu.campus.circulation.domain.MeetupLocation.Campus;
 import edu.campus.circulation.service.DemoService.Action;
@@ -98,6 +99,21 @@ class DemoServiceTest {
         assertEquals(2, reopened.credit(LIN).count());
         assertEquals(joined, reopened.joinedAt(LIN));
         assertEquals(initialMarketSize, reopened.market("", null).size());
+    }
+
+    @Test
+    void publishesAndReloadsBuildingIndependentlyOfMeetupLocation() throws Exception {
+        Path file = directory.resolve("building.db");
+        DemoService service = open(file);
+        var meetup = new MeetupLocation(Campus.NANHU, "南湖综合楼东门");
+        service.publish(LIN, new Draft(1, "校园地图测试教材", "保存完好", Condition.GOOD, TradeType.SALE,
+                1800L, "", meetup, Instant.now().plusSeconds(86_400), 1, CampusBuilding.D05));
+
+        var reopened = open(file);
+        var item = reopened.market("校园地图测试教材", null).get(0);
+        assertEquals(CampusBuilding.D05, item.building());
+        assertEquals(meetup, item.location());
+        assertTrue(reopened.market("USB 台灯", null).stream().anyMatch(existing -> existing.building() == null));
     }
 
     @Test

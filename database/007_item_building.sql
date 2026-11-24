@@ -1,0 +1,4 @@
+BEGIN IMMEDIATE;
+ALTER TABLE items ADD COLUMN building_code TEXT;
+PRAGMA user_version = 7;
+COMMIT;

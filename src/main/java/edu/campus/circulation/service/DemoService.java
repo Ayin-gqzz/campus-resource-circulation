@@ -1,5 +1,7 @@
 package edu.campus.circulation.service;
 
+import edu.campus.circulation.domain.CampusBuilding;
+
 import edu.campus.circulation.domain.ExchangeStatus;
 import edu.campus.circulation.domain.ExchangeMessage;
 import edu.campus.circulation.domain.ItemCondition;
@@ -81,7 +83,8 @@ public final class DemoService {
                 .map(item -> new Item(item.id(), item.ownerId(), item.title(), item.description(),
                         names.get(item.categoryId()), Condition.valueOf(item.condition().name()),
                         TradeType.valueOf(item.tradeType().name()), item.priceCents() == null ? 0 : item.priceCents(),
-                        item.swapNote(), item.meetupLocation(), pendingCount(item.id()), item.meetupAt(), item.inventory()))
+                        item.swapNote(), item.meetupLocation(), pendingCount(item.id()), item.meetupAt(),
+                        item.inventory(), item.building()))
                 .toList();
     }
 
@@ -96,7 +99,8 @@ public final class DemoService {
         require(draft.type() != TradeType.SALE || (price != null && price > 0), "请输入大于零的售价。");
         ItemDraft itemDraft = new ItemDraft(draft.categoryId(), title, description,
                 ItemCondition.valueOf(draft.condition().name()),
-                edu.campus.circulation.domain.TradeType.valueOf(draft.type().name()), price, swap, List.of(), draft.quantity());
+                edu.campus.circulation.domain.TradeType.valueOf(draft.type().name()), price, swap, List.of(),
+                draft.quantity(), draft.building());
         database.inWriteTransaction(() -> {
             active(owner);
             require(categories.findById(draft.categoryId()).filter(category -> category.enabled()).isPresent(),
@@ -461,7 +465,13 @@ public final class DemoService {
     }
 
     public record Draft(long categoryId, String title, String description, Condition condition,
-            TradeType type, Long priceCents, String swapNote, MeetupLocation location, Instant meetupAt, int quantity) {
+            TradeType type, Long priceCents, String swapNote, MeetupLocation location, Instant meetupAt, int quantity,
+            CampusBuilding building) {
+        public Draft(long categoryId, String title, String description, Condition condition,
+                TradeType type, Long priceCents, String swapNote, MeetupLocation location, Instant meetupAt, int quantity) {
+            this(categoryId, title, description, condition, type, priceCents, swapNote, location, meetupAt, quantity, null);
+        }
+
         public Draft(long categoryId, String title, String description, Condition condition,
                 TradeType type, Long priceCents, String swapNote, MeetupLocation location, Instant meetupAt) {
             this(categoryId, title, description, condition, type, priceCents, swapNote, location, meetupAt, 1);
@@ -474,7 +484,7 @@ public final class DemoService {
 
     public record Item(long id, long ownerId, String title, String description, String category,
             Condition condition, TradeType type, long priceCents, String swapNote, MeetupLocation location,
-            int pendingCount, Instant meetupAt, Inventory inventory) {}
+            int pendingCount, Instant meetupAt, Inventory inventory, CampusBuilding building) {}
 
     public record Exchange(long id, long itemId, String itemTitle, long ownerId, long requesterId, Status status,
             String message, Integer stars, MeetupLocation location, Long priceCents,
