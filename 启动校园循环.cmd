@@ -1,8 +1,8 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-set "DEMO_JAR=%~dp0target\campus-resource-circulation-buy-sell.jar"
-if not exist "%DEMO_JAR%" set "DEMO_JAR=%~dp0target\campus-resource-circulation-0.1.0-SNAPSHOT.jar"
+set "DEMO_JAR=%~dp0target\campus-resource-circulation-0.1.0-SNAPSHOT.jar"
+if not exist "%DEMO_JAR%" set "DEMO_JAR=%~dp0target\campus-resource-circulation-buy-sell.jar"
 set "DEMO_JAVA="
 if not exist "%DEMO_JAR%" (
     echo Demo program not found: %DEMO_JAR%

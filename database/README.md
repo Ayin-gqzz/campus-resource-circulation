@@ -12,6 +12,8 @@
 
 [006_inventory.sql](006_inventory.sql) 将版本 5 升级到版本 6，为物品与意向添加数量，旧记录均按 1 件迁移，并移除每件物品只能存在一条成功流转的索引。预定数与成交数由相应状态的意向数量求和，余量为发布数减去两者；不额外保存重复计数。接受与完成的 UPDATE 同时检查容量，服务层在写事务中重算物品状态；库存不足返回 false，整笔动作不生效。
 
+[007_item_building.sql](007_item_building.sql) 将版本 6 升级到版本 7，为物品添加可空的 `building_code`。发布时保存用户确认的应用内楼栋编号，旧物品的字段为空。
+
 ## 数据表
 
 | 表 | 主要关系及约束 |
@@ -40,10 +42,11 @@ sqlite3 week-01.db ".read database/003_exchange_negotiations.sql"
 sqlite3 week-01.db ".read database/004_notifications.sql"
 sqlite3 week-01.db ".read database/005_meetup_time.sql"
 sqlite3 week-01.db ".read database/006_inventory.sql"
+sqlite3 week-01.db ".read database/007_item_building.sql"
 sqlite3 week-01.db "PRAGMA user_version; PRAGMA foreign_key_check;"
 ```
 
-六份脚本按顺序执行后，`user_version` 返回 `6`，外键检查没有结果。已有数据库由应用按版本执行后续迁移。
+七份脚本按顺序执行后，`user_version` 返回 `7`，外键检查没有结果。已有数据库由应用按版本执行后续迁移。
 
 ### 应用初始化（DatabaseManager）
 
@@ -51,13 +54,9 @@ sqlite3 week-01.db "PRAGMA user_version; PRAGMA foreign_key_check;"
 
 | `user_version` | 行为 |
 | --- | --- |
-| `0` | 按顺序执行六个脚本，完成后版本为 6 |
-| `1` | 执行地点、协商、提醒、时间与库存迁移，保留旧数据 |
-| `2` | 执行协商、提醒、时间与库存迁移，保留旧数据 |
-| `3` | 执行提醒、时间与库存迁移，保留旧数据 |
-| `4` | 执行时间与库存迁移，保留旧数据 |
-| `5` | 执行库存迁移，保留旧数据 |
-| `6` | 直接返回，重复调用不产生副作用 |
+| `0` | 按顺序执行七个脚本，完成后版本为 7 |
+| `1` 至 `6` | 从下一版本开始执行后续迁移，保留已有记录 |
+| `7` | 直接返回，重复调用不产生副作用 |
 | 其他 | 抛出 `DataAccessException`，消息为 `Unsupported database version: <版本>`，不修改数据库 |
 
 应用优先从 classpath 的 `/database/` 读取脚本，并在同一事务中执行建表与版本更新。命令行单独执行脚本时使用脚本里的事务语句。执行失败时回滚并保留升级前的数据库版本。

@@ -18,7 +18,15 @@ public record Item(
         Instant createdAt,
         MeetupLocation meetupLocation,
         Instant meetupAt,
-        Inventory inventory) {
+        Inventory inventory,
+        CampusBuilding building) {
+
+    public Item(long id, long ownerId, long categoryId, String title, String description, ItemCondition condition,
+            TradeType tradeType, Long priceCents, String swapNote, ItemStatus status, List<String> tags,
+            Instant createdAt, MeetupLocation meetupLocation, Instant meetupAt, Inventory inventory) {
+        this(id, ownerId, categoryId, title, description, condition, tradeType, priceCents, swapNote, status, tags,
+                createdAt, meetupLocation, meetupAt, inventory, null);
+    }
 
     public Item(long id, long ownerId, long categoryId, String title, String description, ItemCondition condition,
             TradeType tradeType, Long priceCents, String swapNote, ItemStatus status, List<String> tags,

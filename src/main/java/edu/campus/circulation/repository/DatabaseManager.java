@@ -44,7 +44,7 @@ public final class DatabaseManager {
                 try (ResultSet result = statement.executeQuery("PRAGMA user_version")) {
                     version = result.next() ? result.getInt(1) : 0;
                 }
-                if (version < 0 || version > 6) {
+                if (version < 0 || version > 7) {
                     throw new DataAccessException("Unsupported database version: " + version);
                 }
                 if (version == 0) {
@@ -64,6 +64,9 @@ public final class DatabaseManager {
                 }
                 if (version < 6) {
                     executeSchema(statement, "006_inventory.sql");
+                }
+                if (version < 7) {
+                    executeSchema(statement, "007_item_building.sql");
                 }
             }
             return null;
